@@ -49,7 +49,7 @@ client.on('ready', async () => {
 
     // Schedule task to run every minute between 7:30 and 8:00 AM except weekends
     let lecturesFound = false;
-    cron.schedule('*/1 7-8 * * 1-5', async () => {
+    cron.schedule('30-59 7 * * 1-5, 0-29 8 * * 1-5', async () => {
         if (lecturesFound) return;
 
         try {
@@ -84,7 +84,7 @@ client.on('ready', async () => {
     });
 
     // Reset lecturesFound at 8:00:30 AM every day and send "lectures not yet published" message if no new lectures were found
-    cron.schedule('30 8 * * 1-5', async () => {
+    cron.schedule('0 8 * * 1-5', async () => {
         if (!lecturesFound) {
             for (const channelId of config.channelIds) {
                 const channel = await client.channels.fetch(channelId);
