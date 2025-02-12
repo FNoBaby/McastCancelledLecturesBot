@@ -1,13 +1,32 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
 const fetchCancelledLectures = require('../functions/fetchCancelledLectures');
-const config = require('../config.json');
+const config = require('../../config.json');
 const { getLastMessageId, setLastMessageId } = require('../functions/sharedState');
+
+const cooldowns = new Map();
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('refresh')
         .setDescription('Refresh and resend the latest cancelled lectures embed'),
     async execute(interaction) {
+        const userId = interaction.user.id;
+        const now = Date.now();
+        const cooldownAmount = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+        if (userId !== config.devId) {
+            if (cooldowns.has(userId)) {
+                const expirationTime = cooldowns.get(userId) + cooldownAmount;
+                if (now < expirationTime) {
+                    const timeLeft = (expirationTime - now) / 1000;
+                    return interaction.reply({ content: `Please wait ${timeLeft.toFixed(1)} more seconds before reusing the \`/refresh\` command.`, ephemeral: true });
+                }
+            }
+
+            cooldowns.set(userId, now);
+            setTimeout(() => cooldowns.delete(userId), cooldownAmount);
+        }
+
         try {
             const embed = await fetchCancelledLectures();
             if (embed) {

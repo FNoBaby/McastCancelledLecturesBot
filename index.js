@@ -1,10 +1,10 @@
 const Discord = require('discord.js');
 const cron = require('node-cron');
 const config = require('./config.json');
-const fetchCancelledLectures = require('./functions/fetchCancelledLectures');
-const refreshCommand = require('./commands/refresh');
-const refreshAllCommand = require('./commands/refreshAll');
-const { setLastMessageId, getLastMessageId } = require('./functions/sharedState');
+const fetchCancelledLectures = require('./src/functions/fetchCancelledLectures');
+const refreshCommand = require('./src/commands/refresh');
+const refreshAllCommand = require('./src/commands/refreshAll');
+const { setLastMessageId, getLastMessageId } = require('./src/functions/sharedState');
 
 const client = new Discord.Client({
     intents: [
@@ -24,28 +24,34 @@ client.on('ready', async () => {
     try {
         console.log("Re-registering commands...");
 
+        const commands = [
+            {
+                name: "refresh",
+                description: "Refresh the Cancelled Lectures list"
+            }
+        ];
+
+        if (config.devId) {
+            commands.push({
+                name: "refreshall",
+                description: "Refresh the Cancelled Lectures list in all channels"
+            });
+        }
+
         await rest.put(
             Discord.Routes.applicationCommands(config.clientId),
-            {
-                body: [
-                    {
-                        name: "refresh",
-                        description: "Refresh the Cancelled Lectures list"
-                    },
-                    {
-                        name: "refreshall",
-                        description: "Refresh the Cancelled Lectures list in all channels"
-                    }
-                ]
-            }
+            { body: commands }
         );
         console.log('Successfully registered application commands.');
     } catch (error) {
         console.error('Error registering application commands:', error);
     }
 
-    // Schedule task to run every day at 8:00:59 AM except weekends
-    cron.schedule('/0 8 * * * 1-5', async () => {
+    // Schedule task to run every minute between 7:30 and 8:00 AM except weekends
+    let lecturesFound = false;
+    cron.schedule('*/1 7-8 * * 1-5', async () => {
+        if (lecturesFound) return;
+
         try {
             const embed = await fetchCancelledLectures();
             if (embed) {
@@ -62,6 +68,8 @@ client.on('ready', async () => {
                                 .setFooter({ text: `Last Checked: ${new Date().toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'full', timeStyle: 'short' })}` });
                             await channel.send({ embeds: [noNewLecturesEmbed] });
                             continue;
+                        } else {
+                            lecturesFound = true;
                         }
                     }
                     const message = await channel.send({ embeds: [embed] });
@@ -73,6 +81,22 @@ client.on('ready', async () => {
         } catch (error) {
             console.error('Error sending scheduled lectures:', error);
         }
+    });
+
+    // Reset lecturesFound at 8:00:30 AM every day and send "lectures not yet published" message if no new lectures were found
+    cron.schedule('30 8 * * 1-5', async () => {
+        if (!lecturesFound) {
+            for (const channelId of config.channelIds) {
+                const channel = await client.channels.fetch(channelId);
+                const noNewLecturesEmbed = new Discord.EmbedBuilder()
+                    .setTitle("Cancelled Lectures")
+                    .setDescription("Lectures not published yet. use /refresh to check again")
+                    .setColor('Random')
+                    .setFooter({ text: `Last Checked: ${new Date().toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'full', timeStyle: 'short' })}` });
+                await channel.send({ embeds: [noNewLecturesEmbed] });
+            }
+        }
+        lecturesFound = false;
     });
 
     // Schedule task to run every 1 minute
