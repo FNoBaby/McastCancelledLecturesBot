@@ -24,26 +24,40 @@ const rest = new Discord.REST().setToken(config.token);
 client.on("ready", async () => {
   console.log("Bot is ready");
 
+  // Set bot's presence
+  client.user.setPresence({
+    activities: [{ name: 'Monitoring cancelled lectures', type: Discord.ActivityType.Watching }],
+    status: 'online',
+  });
+
   try {
     console.log("Re-registering commands...");
 
-    const commands = [
+    const globalCommands = [
       {
         name: "refresh",
         description: "Refresh the Cancelled Lectures list",
       },
     ];
 
-    if (config.devId) {
-      commands.push({
-        name: "refreshall",
-        description: "Refresh the Cancelled Lectures list in all channels",
-      });
+    await rest.put(Discord.Routes.applicationCommands(config.clientId), {
+      body: globalCommands,
+    });
+
+    if (config.devGuildId) {
+      const devCommands = [
+        {
+          name: "refreshall",
+          description: "Refresh the Cancelled Lectures list in all channels",
+        },
+      ];
+
+      await rest.put(
+        Discord.Routes.applicationGuildCommands(config.clientId, config.devGuildId),
+        { body: devCommands }
+      );
     }
 
-    await rest.put(Discord.Routes.applicationCommands(config.clientId), {
-      body: commands,
-    });
     console.log("Successfully registered application commands.");
   } catch (error) {
     console.error("Error registering application commands:", error);
@@ -68,7 +82,7 @@ client.on("ready", async () => {
               const noNewLecturesEmbed = new Discord.EmbedBuilder()
                 .setTitle("Cancelled Lectures")
                 .setDescription(
-                  "Lectures not published yet. use /refresh to check again"
+                  "**Lectures not published yet. Use /refresh to check again.**"
                 )
                 .setColor("Random")
                 .setFooter({
@@ -103,6 +117,12 @@ client.on("interactionCreate", async (interaction) => {
   if (commandName === "refresh") {
     await refreshCommand.execute(interaction);
   } else if (commandName === "refreshall") {
+    if (interaction.user.id !== config.devId) {
+      return interaction.reply({
+        content: "You do not have permission to use this command.",
+        ephemeral: true,
+      });
+    }
     await refreshAllCommand.execute(interaction);
   }
 });
@@ -126,7 +146,7 @@ async function runCronJob() {
             const noNewLecturesEmbed = new Discord.EmbedBuilder()
               .setTitle("Cancelled Lectures")
               .setDescription(
-                "Lectures not published yet. Use /refresh to check again."
+                "**Lectures not published yet. Use /refresh to check again.**"
               )
               .setColor("Random")
               .setFooter({
