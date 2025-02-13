@@ -34,7 +34,7 @@ module.exports = {
                         setLastMessageId(channelId, message.id);
                     }
                 }
-                console.log("Successfully refreshed in server ", interaction.guild.name, " in channel ", interaction.channel.name);
+                console.log("Successfully refreshed in server \"", interaction.guild.name, "\"in channel\"", interaction.channel.name , "\"");
                 await interaction.reply({ content: 'The cancelled lectures embed has been refreshed in all channels.', ephemeral: true });
             } else {
                 await interaction.reply({ content: 'Failed to fetch the latest cancelled lectures.', ephemeral: true });

@@ -129,7 +129,7 @@ client.on("interactionCreate", async (interaction) => {
   const { commandName } = interaction;
 
   if (commandName === "refresh") {
-    console.log(`User ${interaction.user.tag} ran /refresh in server ${interaction.guild.name} (ID: ${interaction.guild.id}) in channel ${interaction.channel.name} (ID: ${interaction.channel.id})`);
+    console.log(`User "${interaction.user.tag}" ran /refresh in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`);
     await refreshCommand.execute(interaction);
   } else if (commandName === "refreshall") {
     if (interaction.user.id !== config.devId) {
@@ -138,7 +138,7 @@ client.on("interactionCreate", async (interaction) => {
         ephemeral: true,
       });
     }
-    console.log(`User ${interaction.user.tag} ran /refreshall in server ${interaction.guild.name} (ID: ${interaction.guild.id}) in channel ${interaction.channel.name} (ID: ${interaction.channel.id})`);
+    console.log(`User "${interaction.user.tag}" ran /refreshall in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`);
     await refreshAllCommand.execute(interaction);
   }
 });

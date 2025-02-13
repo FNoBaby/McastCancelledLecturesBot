@@ -48,7 +48,7 @@ module.exports = {
                     } else {
                         const message = await interaction.reply({ embeds: [embed], fetchReply: true });
                         setLastMessageId(interaction.channel.id, message.id);
-                        console.log("Successfully refreshed in server ", interaction.guild.name, " in channel ", interaction.channel.name);
+                        console.log("Successfully refreshed in server \"", interaction.guild.name, "\"in channel\"", interaction.channel.name , "\"");
                         await interaction.followUp({ content: 'The cancelled lectures embed has been sent.', ephemeral: true });
                     }
                 } else {
