@@ -104,7 +104,7 @@ client.on("ready", async () => {
                 .setColor("Random")
                 .setFooter({
                   text: `Last Checked: ${new Date().toLocaleString("en-GB", {
-                    timeZone: "Europe/London",
+                    timeZone: "Europe/Amsterdam",
                     dateStyle: "full",
                     timeStyle: "short",
                   })}`,
@@ -170,7 +170,7 @@ async function runCronJob() {
               .setColor("Random")
               .setFooter({
                 text: `Last Checked: ${new Date().toLocaleString("en-GB", {
-                  timeZone: "Europe/London",
+                  timeZone: "Europe/Amsterdam",
                   dateStyle: "full",
                   timeStyle: "short",
                 })}`,

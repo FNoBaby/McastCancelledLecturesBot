@@ -18,7 +18,7 @@ module.exports = {
                 for (const channelId of config.channelIds) {
                     const channel = await interaction.client.channels.fetch(channelId);
                     const lastMessageId = getLastMessageId(channelId);
-                    const now = new Date().toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'full', timeStyle: 'short' });
+                    const now = new Date().toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', dateStyle: 'full', timeStyle: 'short' });
                     embed.setFooter({ text: `Last Refreshed: ${now}` });
 
                     if (lastMessageId) {

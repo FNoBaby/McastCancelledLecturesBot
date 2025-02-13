@@ -32,7 +32,7 @@ module.exports = {
             if (embed) {
                 if (config.channelIds.includes(interaction.channel.id)) {
                     const lastMessageId = getLastMessageId(interaction.channel.id);
-                    const now = new Date().toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'full', timeStyle: 'short' });
+                    const now = new Date().toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', dateStyle: 'full', timeStyle: 'short' });
                     embed.setFooter({ text: `Last Refreshed: ${now}` });
 
                     if (lastMessageId) {
