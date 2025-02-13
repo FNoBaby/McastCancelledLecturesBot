@@ -26,7 +26,7 @@ client.on("ready", async () => {
 
   // Set bot's presence
   client.user.setPresence({
-    activities: [{ name: 'Monitoring cancelled lectures', type: Discord.ActivityType.Watching }],
+    activities: [{ name: 'for Cancelled Lectures', type: Discord.ActivityType.Watching }],
     status: 'online',
   });
 
