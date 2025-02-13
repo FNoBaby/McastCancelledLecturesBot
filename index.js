@@ -33,7 +33,14 @@ client.on("ready", async () => {
   try {
     console.log("Re-registering commands...");
 
-    const globalCommands = [
+    // Fetch and delete existing global commands
+    const globalCommands = await rest.get(Discord.Routes.applicationCommands(config.clientId));
+    for (const command of globalCommands) {
+      await rest.delete(`${Discord.Routes.applicationCommands(config.clientId)}/${command.id}`);
+    }
+
+    // Register new global commands
+    const newGlobalCommands = [
       {
         name: "refresh",
         description: "Refresh the Cancelled Lectures list",
@@ -41,11 +48,18 @@ client.on("ready", async () => {
     ];
 
     await rest.put(Discord.Routes.applicationCommands(config.clientId), {
-      body: globalCommands,
+      body: newGlobalCommands,
     });
 
     if (config.devGuildId) {
-      const devCommands = [
+      // Fetch and delete existing guild commands
+      const guildCommands = await rest.get(Discord.Routes.applicationGuildCommands(config.clientId, config.devGuildId));
+      for (const command of guildCommands) {
+        await rest.delete(`${Discord.Routes.applicationGuildCommands(config.clientId, config.devGuildId)}/${command.id}`);
+      }
+
+      // Register new guild commands
+      const newDevCommands = [
         {
           name: "refreshall",
           description: "Refresh the Cancelled Lectures list in all channels",
@@ -54,7 +68,7 @@ client.on("ready", async () => {
 
       await rest.put(
         Discord.Routes.applicationGuildCommands(config.clientId, config.devGuildId),
-        { body: devCommands }
+        { body: newDevCommands }
       );
     }
 
