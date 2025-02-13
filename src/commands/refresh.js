@@ -12,7 +12,7 @@ module.exports = {
     async execute(interaction) {
         const userId = interaction.user.id;
         const now = Date.now();
-        const cooldownAmount = 5 * 60 * 1000; // 5 minutes in milliseconds
+        const cooldownAmount = 10 * 1000; // 10 seconds in milliseconds
 
         if (userId !== config.devId) {
             if (cooldowns.has(userId)) {
