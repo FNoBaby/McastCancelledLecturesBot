@@ -29,17 +29,23 @@ client.on("ready", async () => {
 
   // Set bot's presence
   client.user.setPresence({
-    activities: [{ name: 'for Cancelled Lectures', type: Discord.ActivityType.Watching }],
-    status: 'online',
+    activities: [
+      { name: "for Cancelled Lectures", type: Discord.ActivityType.Watching },
+    ],
+    status: "online",
   });
 
   try {
     console.log("Re-registering commands...");
 
     // Fetch and delete existing global commands
-    const globalCommands = await rest.get(Discord.Routes.applicationCommands(config.clientId));
+    const globalCommands = await rest.get(
+      Discord.Routes.applicationCommands(config.clientId)
+    );
     for (const command of globalCommands) {
-      await rest.delete(`${Discord.Routes.applicationCommands(config.clientId)}/${command.id}`);
+      await rest.delete(
+        `${Discord.Routes.applicationCommands(config.clientId)}/${command.id}`
+      );
     }
 
     // Register new global commands
@@ -56,9 +62,19 @@ client.on("ready", async () => {
 
     if (config.devGuildId) {
       // Fetch and delete existing guild commands
-      const guildCommands = await rest.get(Discord.Routes.applicationGuildCommands(config.clientId, config.devGuildId));
+      const guildCommands = await rest.get(
+        Discord.Routes.applicationGuildCommands(
+          config.clientId,
+          config.devGuildId
+        )
+      );
       for (const command of guildCommands) {
-        await rest.delete(`${Discord.Routes.applicationGuildCommands(config.clientId, config.devGuildId)}/${command.id}`);
+        await rest.delete(
+          `${Discord.Routes.applicationGuildCommands(
+            config.clientId,
+            config.devGuildId
+          )}/${command.id}`
+        );
       }
 
       // Register new guild commands
@@ -70,7 +86,10 @@ client.on("ready", async () => {
       ];
 
       await rest.put(
-        Discord.Routes.applicationGuildCommands(config.clientId, config.devGuildId),
+        Discord.Routes.applicationGuildCommands(
+          config.clientId,
+          config.devGuildId
+        ),
         { body: newDevCommands }
       );
     }
@@ -91,30 +110,28 @@ client.on("ready", async () => {
   });
 
   // Reset lecturesFound at 8:00:05 AM every day and send "lectures not yet published" message if no new lectures were found
-  cron.schedule("0 8 * * 1-5", async () => {
-    setTimeout(async () => {
-        if (!lecturesFound) {
-            for (const channelId of config.channelIds) {
-              const channel = await client.channels.fetch(channelId);
-              const noNewLecturesEmbed = new Discord.EmbedBuilder()
-                .setTitle("Cancelled Lectures")
-                .setDescription(
-                  "**Lectures not published yet. Use /refresh to check again.**"
-                )
-                .setColor("Random")
-                .setFooter({
-                  text: `Last Checked: ${new Date().toLocaleString("en-GB", {
-                    timeZone: "Europe/Amsterdam",
-                    dateStyle: "full",
-                    timeStyle: "short",
-                  })}`,
-                });
-              await channel.send({ embeds: [noNewLecturesEmbed] });
-            }
-          }
-          lecturesFound = false;
-          isCronJobRunning = false;
-    }, 5000);
+  cron.schedule("1 8 * * 1-5", async () => {
+    if (!lecturesFound) {
+      for (const channelId of config.channelIds) {
+        const channel = await client.channels.fetch(channelId);
+        const noNewLecturesEmbed = new Discord.EmbedBuilder()
+          .setTitle("Cancelled Lectures")
+          .setDescription(
+            "**Lectures not published yet. Use /refresh to check again.**"
+          )
+          .setColor("Random")
+          .setFooter({
+            text: `Last Checked: ${new Date().toLocaleString("en-GB", {
+              timeZone: "Europe/Amsterdam",
+              dateStyle: "full",
+              timeStyle: "short",
+            })}`,
+          });
+        await channel.send({ embeds: [noNewLecturesEmbed] });
+      }
+    }
+    lecturesFound = false;
+    isCronJobRunning = false;
   });
 });
 
@@ -132,7 +149,9 @@ client.on("interactionCreate", async (interaction) => {
   const { commandName } = interaction;
 
   if (commandName === "refresh") {
-    console.log(`User "${interaction.user.tag}" ran /refresh in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`);
+    console.log(
+      `User "${interaction.user.tag}" ran /refresh in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
+    );
     await refreshCommand.execute(interaction);
   } else if (commandName === "refreshall") {
     if (interaction.user.id !== config.devId) {
@@ -141,7 +160,9 @@ client.on("interactionCreate", async (interaction) => {
         ephemeral: true,
       });
     }
-    console.log(`User "${interaction.user.tag}" ran /refreshall in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`);
+    console.log(
+      `User "${interaction.user.tag}" ran /refreshall in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
+    );
     await refreshAllCommand.execute(interaction);
   }
 });
@@ -175,7 +196,10 @@ async function runCronJob() {
                   timeStyle: "short",
                 })}`,
               });
-            await channel.send({ embeds: [noNewLecturesEmbed] });
+            const message = await channel.send({
+              embeds: [noNewLecturesEmbed],
+            });
+            setLastMessageId(channelId, message.id);
             continue;
           } else {
             lecturesFound = true;
