@@ -183,38 +183,21 @@ async function runCronJob() {
         if (lastMessageId) {
           const lastMessage = await channel.messages.fetch(lastMessageId);
           if (lastMessage.embeds[0]?.description === embed.description) {
-            const noNewLecturesEmbed = new Discord.EmbedBuilder()
-              .setTitle("Cancelled Lectures")
-              .setDescription(
-                "**Lectures not published yet. Use /refresh to check again.**"
-              )
-              .setColor("Random")
-              .setFooter({
-                text: `Last Checked: ${new Date().toLocaleString("en-GB", {
-                  timeZone: "Europe/Amsterdam",
-                  dateStyle: "full",
-                  timeStyle: "short",
-                })}`,
-              });
-            const message = await channel.send({
-              embeds: [noNewLecturesEmbed],
-            });
-            setLastMessageId(channelId, message.id);
             continue;
-          } else {
-            lecturesFound = true;
-            isCronJobRunning = false;
-            console.log("Lectures found. Stopping the cron job...");
-            return;
           }
         }
+        lecturesFound = true;
+        console.log("Lectures found. Stopping the cron job...");
         const message = await channel.send({ embeds: [embed] });
         setLastMessageId(channelId, message.id);
+        break;
       }
     } else {
       console.error("Failed to fetch the latest cancelled lectures.");
     }
   } catch (error) {
     console.error("Error sending scheduled lectures:", error);
+  } finally {
+    isCronJobRunning = false;
   }
 }
