@@ -179,7 +179,6 @@ async function runCronJob() {
             lecturesFound = true;
             isCronJobRunning = false;
             console.log("Lectures found. Stopping the cron job...");
-            return;
           }
         }
         const message = await channel.send({ embeds: [embed] });
