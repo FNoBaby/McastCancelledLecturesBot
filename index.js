@@ -90,18 +90,18 @@ client.on("ready", async () => {
     });
   }
 
-  scheduleCronJob("30-59 7 * * 1-5", "Europe/Malta", async () => {
+  scheduleCronJob("30-59 7 * * 1-5", "Europe/Amsterdam", async () => {
     // Runs every minute from 7:30 AM to 7:59 AM (Mon-Fri)
     await runCronJob();
   });
 
-  scheduleCronJob("0 8 * * 1-5", "Europe/Malta", async () => {
+  scheduleCronJob("0 8 * * 1-5", "Europe/Amsterdam", async () => {
     // Runs exactly at 8:00 AM (Mon-Fri)
     await runCronJob();
   });
 
   // Reset lecturesFound at 8:00:05 AM every day and send "lectures not yet published" message if no new lectures were found
-  scheduleCronJob("1 8 * * 1-5", "Europe/Malta", async () => {
+  scheduleCronJob("1 8 * * 1-5", "Europe/Amsterdam", async () => {
     if (!lecturesFound) {
       for (const channelId of config.channelIds) {
         const channel = await client.channels.fetch(channelId);
