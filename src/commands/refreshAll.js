@@ -15,6 +15,7 @@ module.exports = {
         try {
             const embed = await fetchCancelledLectures();
             if (embed) {
+                console.log("Successfully refreshed all embeds from server \"", interaction.guild.name);
                 for (const channelId of config.channelIds) {
                     const channel = await interaction.client.channels.fetch(channelId);
                     const lastMessageId = getLastMessageId(channelId);
@@ -25,7 +26,9 @@ module.exports = {
                         try {
                             const message = await channel.messages.fetch(lastMessageId);
                             await message.edit({ embeds: [embed] });
+                            console.log(`Successfully refreshed embed in channel "#${channel.name}"`);
                         } catch (fetchError) {
+                            console.error(`Failed to fetch message with ID ${lastMessageId} in channel "#${channel.name}"...Sending new Embed`);
                             const message = await channel.send({ embeds: [embed] });
                             setLastMessageId(channelId, message.id);
                         }
@@ -34,7 +37,6 @@ module.exports = {
                         setLastMessageId(channelId, message.id);
                     }
                 }
-                console.log("Successfully refreshed in server \"", interaction.guild.name, "\"in channel\"", interaction.channel.name , "\"");
                 await interaction.reply({ content: 'The cancelled lectures embed has been refreshed in all channels.', ephemeral: true });
             } else {
                 await interaction.reply({ content: 'Failed to fetch the latest cancelled lectures.', ephemeral: true });

@@ -3,7 +3,6 @@ process.emitWarning = () => {};
 
 const Discord = require("discord.js");
 const cron = require("node-cron");
-const moment = require('moment-timezone');
 const config = require("./config.json");
 const fetchCancelledLectures = require("./src/functions/fetchCancelledLectures");
 const refreshCommand = require("./src/commands/refresh");
@@ -81,27 +80,20 @@ client.on("ready", async () => {
     console.error("Error registering application commands:", error);
   }
 
-  function scheduleCronJob(cronTime, timeZone, task) {
-    cron.schedule(cronTime, async () => {
-      const now = moment().tz(timeZone);
-      if (now.format('HH:mm') === moment().format('HH:mm')) {
-        await task();
-      }
-    });
-  }
-
-  scheduleCronJob("30-59 7 * * 1-5", "Europe/Amsterdam", async () => {
+  cron.schedule("30-59 6 * * 1-5", async () => {
     // Runs every minute from 7:30 AM to 7:59 AM (Mon-Fri)
+    console.log("Cron job scheduled at 7:30 AM...");
     await runCronJob();
   });
 
-  scheduleCronJob("0 8 * * 1-5", "Europe/Amsterdam", async () => {
+  cron.schedule("0 7 * * 1-5", async () => {
     // Runs exactly at 8:00 AM (Mon-Fri)
+    console.log("Cron job scheduled at 8:00 AM...");
     await runCronJob();
   });
 
   // Reset lecturesFound at 8:00:05 AM every day and send "lectures not yet published" message if no new lectures were found
-  scheduleCronJob("1 8 * * 1-5", "Europe/Amsterdam", async () => {
+  cron.schedule("1 7 * * 1-5", async () => {
     if (!lecturesFound) {
       for (const channelId of config.channelIds) {
         const channel = await client.channels.fetch(channelId);
