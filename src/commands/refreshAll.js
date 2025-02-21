@@ -15,13 +15,14 @@ module.exports = {
         try {
             const embed = await fetchCancelledLectures();
             if (embed) {
-                console.log("Successfully refreshed all embeds from server:\"", interaction.guild.name , "\"");
+                console.log(`Successfully refreshed all embeds from server: "${interaction.guild.name}"`);
                 for (const channelId of config.channelIds) {
                     const channel = await interaction.client.channels.fetch(channelId);
+                    const guild = channel.guild;
                     const lastMessageId = getLastMessageId(channelId);
                     const now = new Date().toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', dateStyle: 'full', timeStyle: 'short' });
                     embed.setFooter({ text: `Last Refreshed: ${now}` });
-                    console.log("Refeshing embed in: \"", channel.name , "\"");
+                    console.log(`Refreshing embed in server: "${guild.name}", channel: "${channel.name}"`);
                     if (lastMessageId) {
                         try {
                             const message = await channel.messages.fetch(lastMessageId);
