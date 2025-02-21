@@ -15,20 +15,18 @@ module.exports = {
         try {
             const embed = await fetchCancelledLectures();
             if (embed) {
-                console.log("Successfully refreshed all embeds from server \"", interaction.guild.name);
+                console.log("Successfully refreshed all embeds from server:\"", interaction.guild.name , "\"");
                 for (const channelId of config.channelIds) {
                     const channel = await interaction.client.channels.fetch(channelId);
                     const lastMessageId = getLastMessageId(channelId);
                     const now = new Date().toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', dateStyle: 'full', timeStyle: 'short' });
                     embed.setFooter({ text: `Last Refreshed: ${now}` });
-
+                    console.log("Refeshing embed in: \"", channel.name , "\"");
                     if (lastMessageId) {
                         try {
                             const message = await channel.messages.fetch(lastMessageId);
                             await message.edit({ embeds: [embed] });
-                            console.log(`Successfully refreshed embed in channel "#${channel.name}"`);
                         } catch (fetchError) {
-                            console.error(`Failed to fetch message with ID ${lastMessageId} in channel "#${channel.name}"...Sending new Embed`);
                             const message = await channel.send({ embeds: [embed] });
                             setLastMessageId(channelId, message.id);
                         }

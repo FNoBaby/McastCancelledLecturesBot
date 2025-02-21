@@ -38,6 +38,7 @@ async function fetchCancelledLectures() {
         const embed = new EmbedBuilder()
             .setTitle("Cancelled Lectures")
             .setDescription(description)
+            .setColor("Random")
             // .setFooter({ text: `Last Modified: ${formattedModifiedTime}` });
 
         // Ensure the embed is not empty
