@@ -28,7 +28,7 @@ module.exports = {
         }
 
         try {
-            const embed = await fetchCancelledLectures();
+            const { embed, date } = await fetchCancelledLectures();
             if (embed) {
                 if (config.channelIds.includes(interaction.channel.id)) {
                     const lastMessageId = getLastMessageId(interaction.channel.id);

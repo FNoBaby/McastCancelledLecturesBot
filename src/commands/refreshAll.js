@@ -13,7 +13,7 @@ module.exports = {
         }
 
         try {
-            const embed = await fetchCancelledLectures();
+            const { embed, date } = await fetchCancelledLectures();
             if (embed) {
                 console.log(`Successfully refreshed all embeds from server: "${interaction.guild.name}"`);
                 for (const channelId of config.channelIds) {
