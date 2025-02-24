@@ -1,8 +1,10 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { EmbedBuilder } = require('discord.js');
+const moment = require('moment-timezone');
 
 let lastFetchedLectures = [];
+let lastFetchedDate = '';
 
 async function fetchCancelledLectures() {
     try {
@@ -11,7 +13,12 @@ async function fetchCancelledLectures() {
         const $ = cheerio.load(html);
 
         // Extract the date part from the description
-        const description = $('article .entry-content h4 strong').first().text().trim() + $('article .entry-content h4 strong').last().text().trim();
+        const rawDatePart = $('article .entry-content h4 strong').first().text().trim() + $('article .entry-content h4 strong').last().text().trim();
+        const datePart = rawDatePart.replace('Cancelled Lectures for ', '').trim();
+        const description = `Cancelled Lectures for ${datePart}`;
+
+        // Parse the date string into a Date object
+        const parsedDate = moment.tz(datePart, 'dddd Do MMMM, YYYY', 'Europe/Amsterdam').toDate();
 
         // Extract class names and the classes they are cancelled for
         const cancelledLectures = [];
@@ -32,14 +39,13 @@ async function fetchCancelledLectures() {
 
         // Add new lectures to the last fetched lectures
         lastFetchedLectures = [...lastFetchedLectures, ...newLectures];
-
+        lastFetchedDate = parsedDate;
 
         // Build the embed
         const embed = new EmbedBuilder()
             .setTitle("Cancelled Lectures")
             .setDescription(description)
-            .setColor("Random")
-            // .setFooter({ text: `Last Modified: ${formattedModifiedTime}` });
+            .setColor("Random");
 
         // Ensure the embed is not empty
         if (lastFetchedLectures.length > 0) {
@@ -48,8 +54,8 @@ async function fetchCancelledLectures() {
             });
         }
 
-        // Return the embed
-        return embed;
+        // Return the embed and the date
+        return { embed, date: parsedDate };
     } catch (error) {
         console.error('Error fetching cancelled lectures:', error);
     }

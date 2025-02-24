@@ -31,3 +31,6 @@ config.json
 *.ntvs*
 *.njsproj
 *.sln
+
+# HTML
+*.html

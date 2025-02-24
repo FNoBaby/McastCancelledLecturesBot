@@ -154,8 +154,12 @@ async function runCronJob() {
   console.log("Cron job running...");
   isCronJobRunning = true;
   try {
-    const embed = await fetchCancelledLectures();
-    if (embed) {
+    const { embed, date } = await fetchCancelledLectures();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Set the time to midnight for accurate comparison
+    date.setHours(0, 0, 0, 0); // Set the time to midnight for accurate comparison
+
+    if (embed && (date.getTime() === today.getTime())) {
       for (const channelId of config.channelIds) {
         const channel = await client.channels.fetch(channelId);
         const lastMessageId = getLastMessageId(channelId);
