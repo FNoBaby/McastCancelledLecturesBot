@@ -11,6 +11,7 @@ const {
   setLastMessageId,
   getLastMessageId,
 } = require("./src/functions/sharedState");
+const moment = require('moment-timezone');
 
 const client = new Discord.Client({
   intents: [
@@ -80,7 +81,16 @@ client.on("ready", async () => {
     console.error("Error registering application commands:", error);
   }
 
-  cron.schedule("30-59 6 * * 1-5", async () => {
+  //Test Cron Jobs
+  // cron.schedule("43-50 8 * * 1-5", async () => {
+  //   // Runs every minute from 7:30 AM to 7:59 AM (Mon-Fri)
+  //   console.log("Cron job scheduled at 7:30 AM...");
+  //   await runCronJob();
+  // });
+
+
+  // Schedule cron jobs
+  cron.schedule("00-59 6 * * 1-5", async () => {
     // Runs every minute from 7:30 AM to 7:59 AM (Mon-Fri)
     console.log("Cron job scheduled at 7:30 AM...");
     await runCronJob();
@@ -155,13 +165,16 @@ async function runCronJob() {
   isCronJobRunning = true;
   try {
     const { embed, date } = await fetchCancelledLectures();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Set the time to midnight for accurate comparison
-    date.setHours(0, 0, 0, 0); // Set the time to midnight for accurate comparison
+    const currentDate = moment.tz('Europe/Amsterdam').startOf('day').toDate();
+    const parsedDate = moment(date, 'dddd, MMMM Do YYYY, h:mm:ss a').startOf('day').toDate();
 
-    if (embed && (date.getTime() === today.getTime())) {
+    if (embed && (parsedDate.getTime() === currentDate.getTime())) {
       for (const channelId of config.channelIds) {
         const channel = await client.channels.fetch(channelId);
+        if (!channel) {
+          console.error(`Failed to fetch channel with ID: ${channelId}`);
+          continue;
+        }
         const lastMessageId = getLastMessageId(channelId);
         if (lastMessageId) {
           const lastMessage = await channel.messages.fetch(lastMessageId);
@@ -180,15 +193,22 @@ async function runCronJob() {
                 })}`,
               });
             await channel.send({ embeds: [noNewLecturesEmbed] });
+            setLastMessageId(channelId, message.id);
             continue;
           } else {
             lecturesFound = true;
             isCronJobRunning = false;
             console.log("Lectures found. Sending Lectures....");
+            const message = await channel.send({ embeds: [embed] });
+            setLastMessageId(channelId, message.id);
           }
+        } else {
+          console.log("Last Message ID not found. Sending Lectures....");
+          lecturesFound = true;
+          isCronJobRunning = false;
+          const message = await channel.send({ embeds: [embed] });
+          setLastMessageId(channelId, message.id);
         }
-        const message = await channel.send({ embeds: [embed] });
-        setLastMessageId(channelId, message.id);
       }
     } else {
       console.error("Failed to fetch the latest cancelled lectures.");
@@ -199,3 +219,19 @@ async function runCronJob() {
     isCronJobRunning = false;
   }
 }
+
+// console.log("Testing");
+// async function main() {
+
+//   const { embed, date } = await fetchCancelledLectures();
+//   const currentDate = moment.tz('Europe/Amsterdam').startOf('day').toDate();
+//   const parsedDate = moment(date, 'dddd, MMMM Do YYYY, h:mm:ss a').startOf('day').toDate();
+  
+//   console.log("Parsed" ,parsedDate.getTime());
+//   console.log("Current", currentDate.getTime());
+
+//   console.log("Equal?" ,parsedDate.getTime() === currentDate.getTime()); 
+  
+// }
+
+// main();
