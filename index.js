@@ -11,7 +11,7 @@ const {
   setLastMessageId,
   getLastMessageId,
 } = require("./src/functions/sharedState");
-const moment = require('moment-timezone');
+const moment = require("moment-timezone");
 
 const client = new Discord.Client({
   intents: [
@@ -30,17 +30,23 @@ client.on("ready", async () => {
 
   // Set bot's presence
   client.user.setPresence({
-    activities: [{ name: 'for Cancelled Lectures', type: Discord.ActivityType.Watching }],
-    status: 'online',
+    activities: [
+      { name: "for Cancelled Lectures", type: Discord.ActivityType.Watching },
+    ],
+    status: "online",
   });
 
   try {
     console.log("Re-registering commands...");
 
     // Fetch and delete existing global commands
-    const globalCommands = await rest.get(Discord.Routes.applicationCommands(config.clientId));
+    const globalCommands = await rest.get(
+      Discord.Routes.applicationCommands(config.clientId)
+    );
     for (const command of globalCommands) {
-      await rest.delete(`${Discord.Routes.applicationCommands(config.clientId)}/${command.id}`);
+      await rest.delete(
+        `${Discord.Routes.applicationCommands(config.clientId)}/${command.id}`
+      );
     }
 
     // Register new global commands
@@ -57,9 +63,19 @@ client.on("ready", async () => {
 
     if (config.devGuildId) {
       // Fetch and delete existing guild commands
-      const guildCommands = await rest.get(Discord.Routes.applicationGuildCommands(config.clientId, config.devGuildId));
+      const guildCommands = await rest.get(
+        Discord.Routes.applicationGuildCommands(
+          config.clientId,
+          config.devGuildId
+        )
+      );
       for (const command of guildCommands) {
-        await rest.delete(`${Discord.Routes.applicationGuildCommands(config.clientId, config.devGuildId)}/${command.id}`);
+        await rest.delete(
+          `${Discord.Routes.applicationGuildCommands(
+            config.clientId,
+            config.devGuildId
+          )}/${command.id}`
+        );
       }
 
       // Register new guild commands
@@ -71,7 +87,10 @@ client.on("ready", async () => {
       ];
 
       await rest.put(
-        Discord.Routes.applicationGuildCommands(config.clientId, config.devGuildId),
+        Discord.Routes.applicationGuildCommands(
+          config.clientId,
+          config.devGuildId
+        ),
         { body: newDevCommands }
       );
     }
@@ -87,7 +106,6 @@ client.on("ready", async () => {
   //   console.log("Cron job scheduled at 7:30 AM...");
   //   await runCronJob();
   // });
-
 
   // Schedule cron jobs
   cron.schedule("00-59 6 * * 1-5", async () => {
@@ -121,6 +139,7 @@ client.on("ready", async () => {
             })}`,
           });
         await channel.send({ embeds: [noNewLecturesEmbed] });
+        setLastMessageId(channelId, message.id);
       }
     }
     lecturesFound = false;
@@ -142,7 +161,9 @@ client.on("interactionCreate", async (interaction) => {
   const { commandName } = interaction;
 
   if (commandName === "refresh") {
-    console.log(`User "${interaction.user.tag}" ran /refresh in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`);
+    console.log(
+      `User "${interaction.user.tag}" ran /refresh in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
+    );
     await refreshCommand.execute(interaction);
   } else if (commandName === "refreshall") {
     if (interaction.user.id !== config.devId) {
@@ -151,7 +172,9 @@ client.on("interactionCreate", async (interaction) => {
         ephemeral: true,
       });
     }
-    console.log(`User "${interaction.user.tag}" ran /refreshall in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`);
+    console.log(
+      `User "${interaction.user.tag}" ran /refreshall in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
+    );
     await refreshAllCommand.execute(interaction);
   }
 });
@@ -165,10 +188,13 @@ async function runCronJob() {
   isCronJobRunning = true;
   try {
     const { embed, date } = await fetchCancelledLectures();
-    const currentDate = moment.tz('Europe/Amsterdam').startOf('day').toDate();
-    const parsedDate = moment.tz(date, 'dddd, MMMM Do YYYY, h:mm:ss a', 'Europe/Amsterdam').startOf('day').toDate();
+    const currentDate = moment.tz("Europe/Amsterdam").startOf("day").toDate();
+    const parsedDate = moment
+      .tz(date, "dddd, MMMM Do YYYY, h:mm:ss a", "Europe/Amsterdam")
+      .startOf("day")
+      .toDate();
 
-    if (embed && (parsedDate.getTime() === currentDate.getTime())) {
+    if (embed && parsedDate.getTime() === currentDate.getTime()) {
       for (const channelId of config.channelIds) {
         const channel = await client.channels.fetch(channelId);
         if (!channel) {
@@ -211,12 +237,12 @@ async function runCronJob() {
         }
       }
     } else {
-            if (!(parsedDate.getTime() === currentDate.getTime())) {
+      if (!(parsedDate.getTime() === currentDate.getTime())) {
         console.log("Parsed Date:", parsedDate);
         console.log("Parsed Date:", parsedDate.getTime());
         console.log("Current Date:", currentDate);
         console.log("Current Date:", currentDate.getTime());
-        
+
         console.log("No new lectures found yet.");
         lecturesFound = false;
       } else if (!embed) {
@@ -239,12 +265,12 @@ async function runCronJob() {
 //   const { embed, date } = await fetchCancelledLectures();
 //   const currentDate = moment.tz('Europe/Amsterdam').startOf('day').toDate();
 //   const parsedDate = moment(date, 'dddd, MMMM Do YYYY, h:mm:ss a').startOf('day').toDate();
-  
+
 //   console.log("Parsed" ,parsedDate.getTime());
 //   console.log("Current", currentDate.getTime());
 
-//   console.log("Equal?" ,parsedDate.getTime() === currentDate.getTime()); 
-  
+//   console.log("Equal?" ,parsedDate.getTime() === currentDate.getTime());
+
 // }
 
 // main();
