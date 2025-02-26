@@ -82,7 +82,7 @@ client.on("ready", async () => {
   }
 
   //Test Cron Jobs
-  // cron.schedule("43-50 8 * * 1-5", async () => {
+  // cron.schedule("53-59 8 * * 1-5", async () => {
   //   // Runs every minute from 7:30 AM to 7:59 AM (Mon-Fri)
   //   console.log("Cron job scheduled at 7:30 AM...");
   //   await runCronJob();
@@ -166,7 +166,7 @@ async function runCronJob() {
   try {
     const { embed, date } = await fetchCancelledLectures();
     const currentDate = moment.tz('Europe/Amsterdam').startOf('day').toDate();
-    const parsedDate = moment(date, 'dddd, MMMM Do YYYY, h:mm:ss a').startOf('day').toDate();
+    const parsedDate = moment.tz(date, 'dddd, MMMM Do YYYY, h:mm:ss a', 'Europe/Amsterdam').startOf('day').toDate();
 
     if (embed && (parsedDate.getTime() === currentDate.getTime())) {
       for (const channelId of config.channelIds) {
@@ -211,7 +211,20 @@ async function runCronJob() {
         }
       }
     } else {
-      console.error("Failed to fetch the latest cancelled lectures.");
+            if (!(parsedDate.getTime() === currentDate.getTime())) {
+        console.log("Parsed Date:", parsedDate);
+        console.log("Parsed Date:", parsedDate.getTime());
+        console.log("Current Date:", currentDate);
+        console.log("Current Date:", currentDate.getTime());
+        
+        console.log("No new lectures found yet.");
+        lecturesFound = false;
+      } else if (!embed) {
+        console.log("Invalid Embed");
+        lecturesFound = false;
+      } else {
+        console.error("Failed to fetch the latest cancelled lectures.");
+      }
     }
   } catch (error) {
     console.error("Error sending scheduled lectures:", error);
