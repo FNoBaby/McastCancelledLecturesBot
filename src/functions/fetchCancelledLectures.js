@@ -10,6 +10,11 @@ async function fetchCancelledLectures() {
     try {
         const response = await axios.get('https://iict.mcast.edu.mt/cancelled-lectures/');
         const html = response.data;
+
+        //Save HTML into a file for debugging
+        // const fs = require('fs');
+        // fs.writeFileSync('cancelled-lectures.html', html);
+
         const $ = cheerio.load(html);
 
         // Extract the date part from the description
@@ -24,16 +29,18 @@ async function fetchCancelledLectures() {
         const cancelledLectures = [];
         $('article .entry-content ul li').each((index, element) => {
             const text = $(element).text();
-            const [className, cancelledFor] = text.split('—').map(item => item.trim());
-            const cancelledForList = cancelledFor.split(',').map(item => item.trim());
-            cancelledLectures.push({ className, cancelledFor: cancelledForList });
+            if (text.includes('—')) {
+                const [className, cancelledFor] = text.split('—').map(item => item.trim());
+                const cancelledForList = cancelledFor.split(',').map(item => item.trim());
+                cancelledLectures.push({ className, cancelledFor: cancelledForList });
+            }
         });
 
         // Compare new lectures with the last fetched lectures
         const newLectures = cancelledLectures.filter(lecture => {
             return !lastFetchedLectures.some(lastLecture => 
-                lastLecture.className === lecture.className && 
-                JSON.stringify(lastLecture.cancelledFor) === JSON.stringify(lecture.cancelledFor)
+                lastLecture?.className === lecture?.className && 
+                JSON.stringify(lastLecture?.cancelledFor) === JSON.stringify(lecture?.cancelledFor)
             );
         });
 
@@ -48,9 +55,9 @@ async function fetchCancelledLectures() {
             .setColor("Random");
 
         // Ensure the embed is not empty
-        if (lastFetchedLectures.length > 0) {
-            lastFetchedLectures.forEach(lecture => {
-                embed.addFields({ name: lecture.className, value: lecture.cancelledFor.join(', '), inline: false });
+        if (lastFetchedLectures?.length > 0) {
+            lastFetchedLectures?.forEach(lecture => {
+                embed.addFields({ name: lecture?.className, value: lecture?.cancelledFor.join(', '), inline: false });
             });
         }
 
@@ -58,7 +65,14 @@ async function fetchCancelledLectures() {
         return { embed, date: parsedDate };
     } catch (error) {
         console.error('Error fetching cancelled lectures:', error);
+        return { embed: null, date: null };
     }
 }
 
+// async function test(){
+//     const { embed, date } = await fetchCancelledLectures() || {};
+//     console.log(JSON.stringify(embed), date);
+// }
+
+// test();
 module.exports = fetchCancelledLectures;

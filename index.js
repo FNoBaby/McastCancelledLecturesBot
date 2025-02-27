@@ -187,7 +187,11 @@ async function runCronJob() {
   console.log("Cron job running...");
   isCronJobRunning = true;
   try {
-    const { embed, date } = await fetchCancelledLectures();
+    const { embed, date } = await fetchCancelledLectures() || {};
+    if (!embed || !date) {
+      console.error("Failed to fetch the latest cancelled lectures.");
+      return;
+    }
     const currentDate = moment.tz("Europe/Amsterdam").startOf("day").toDate();
     const parsedDate = moment
       .tz(date, "dddd, MMMM Do YYYY, h:mm:ss a", "Europe/Amsterdam")
