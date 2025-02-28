@@ -69,10 +69,9 @@ async function fetchCancelledLectures() {
     }
 }
 
-// async function test(){
-//     const { embed, date } = await fetchCancelledLectures() || {};
-//     console.log(JSON.stringify(embed), date);
-// }
-
-// test();
-module.exports = fetchCancelledLectures;
+async function resetCancelledLecturesArray(){
+    lastFetchedDate = '';
+    lastFetchedLectures = [];
+    console.log('Cancelled lectures array reset.');
+}
+module.exports = {fetchCancelledLectures , resetCancelledLecturesArray};

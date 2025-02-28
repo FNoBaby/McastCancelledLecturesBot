@@ -4,7 +4,10 @@ process.emitWarning = () => {};
 const Discord = require("discord.js");
 const cron = require("node-cron");
 const config = require("./config.json");
-const fetchCancelledLectures = require("./src/functions/fetchCancelledLectures");
+const {
+  fetchCancelledLectures,
+  resetCancelledLecturesArray 
+} = require("./src/functions/fetchCancelledLectures");
 const refreshCommand = require("./src/commands/refresh");
 const refreshAllCommand = require("./src/commands/refreshAll");
 const {
@@ -187,6 +190,7 @@ async function runCronJob() {
   console.log("Cron job running...");
   isCronJobRunning = true;
   try {
+    await resetCancelledLecturesArray();
     const { embed, date } = await fetchCancelledLectures() || {};
     if (!embed || !date) {
       console.error("Failed to fetch the latest cancelled lectures.");
