@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const fetchCancelledLectures = require('../functions/fetchCancelledLectures');
+const { fetchCancelledLectures } = require('../functions/fetchCancelledLectures');
 const config = require('../../config.json');
 const { getLastMessageId, setLastMessageId } = require('../functions/sharedState');
 
