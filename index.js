@@ -6,7 +6,7 @@ const cron = require("node-cron");
 const config = require("./config.json");
 const {
   fetchCancelledLectures,
-  resetCancelledLecturesArray 
+  resetCancelledLecturesArray,
 } = require("./src/functions/fetchCancelledLectures");
 const refreshCommand = require("./src/commands/refresh");
 const refreshAllCommand = require("./src/commands/refreshAll");
@@ -128,6 +128,11 @@ client.on("ready", async () => {
     if (!lecturesFound) {
       for (const channelId of config.channelIds) {
         const channel = await client.channels.fetch(channelId);
+        const guild = channel.guild;
+        if (!channel) {
+          console.error(`Failed to fetch channel with ID: ${channelId}`);
+          continue;
+        }
         const noNewLecturesEmbed = new Discord.EmbedBuilder()
           .setTitle("Cancelled Lectures")
           .setDescription(
@@ -141,6 +146,10 @@ client.on("ready", async () => {
               timeStyle: "short",
             })}`,
           });
+
+        console.log(
+          `Sending No Lectures Found embed in server: "${guild.name}", channel: "${channel.name}"`
+        );
         await channel.send({ embeds: [noNewLecturesEmbed] });
         setLastMessageId(channelId, message.id);
       }
@@ -191,7 +200,7 @@ async function runCronJob() {
   isCronJobRunning = true;
   try {
     await resetCancelledLecturesArray();
-    const { embed, date } = await fetchCancelledLectures() || {};
+    const { embed, date } = (await fetchCancelledLectures()) || {};
     if (!embed || !date) {
       console.error("Failed to fetch the latest cancelled lectures.");
       return;
@@ -205,6 +214,7 @@ async function runCronJob() {
     if (embed && parsedDate.getTime() === currentDate.getTime()) {
       for (const channelId of config.channelIds) {
         const channel = await client.channels.fetch(channelId);
+        const guild = channel.guild;
         if (!channel) {
           console.error(`Failed to fetch channel with ID: ${channelId}`);
           continue;
@@ -232,7 +242,7 @@ async function runCronJob() {
           } else {
             lecturesFound = true;
             isCronJobRunning = false;
-            console.log("Lectures found. Sending Lectures....");
+            console.log("Lectures found. Sending Lectures....in server: ", guild.name , "channel: ", channel.name);
             const message = await channel.send({ embeds: [embed] });
             setLastMessageId(channelId, message.id);
           }
@@ -246,11 +256,6 @@ async function runCronJob() {
       }
     } else {
       if (!(parsedDate.getTime() === currentDate.getTime())) {
-        console.log("Parsed Date:", parsedDate);
-        console.log("Parsed Date:", parsedDate.getTime());
-        console.log("Current Date:", currentDate);
-        console.log("Current Date:", currentDate.getTime());
-
         console.log("No new lectures found yet.");
         lecturesFound = false;
       } else if (!embed) {
