@@ -15,6 +15,8 @@ const {
   getLastMessageId,
 } = require("./src/functions/sharedState");
 const moment = require("moment-timezone");
+const getMotivationalQuote = require('./src/functions/getMotivationalQuote');
+const motivatemeCommand = require('./src/commands/motivateme');
 
 const client = new Discord.Client({
   intents: [
@@ -57,6 +59,10 @@ client.on("ready", async () => {
       {
         name: "refresh",
         description: "Refresh the Cancelled Lectures list",
+      },
+      {
+        name: "motivateme",
+        description: "Get a motivational quote",
       },
     ];
 
@@ -188,6 +194,11 @@ client.on("interactionCreate", async (interaction) => {
       `User "${interaction.user.tag}" ran /refreshall in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
     );
     await refreshAllCommand.execute(interaction);
+  } else if (commandName === "motivateme") {
+    console.log(
+      `User "${interaction.user.tag}" ran /motivateme in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
+    );
+    await motivatemeCommand.execute(interaction);
   }
 });
 
