@@ -15,8 +15,7 @@ const {
   getLastMessageId,
 } = require("./src/functions/sharedState");
 const moment = require("moment-timezone");
-const getMotivationalQuote = require('./src/functions/getMotivationalQuote');
-const motivatemeCommand = require('./src/commands/motivateme');
+const motivatemeCommand = require("./src/commands/motivateme");
 
 const client = new Discord.Client({
   intents: [
@@ -131,37 +130,12 @@ client.on("ready", async () => {
 
   // Reset lecturesFound at 8:00:05 AM every day and send "lectures not yet published" message if no new lectures were found
   cron.schedule("1 7 * * 1-5", async () => {
-    if (!lecturesFound) {
-      for (const channelId of config.channelIds) {
-        const channel = await client.channels.fetch(channelId);
-        const guild = channel.guild;
-        if (!channel) {
-          console.error(`Failed to fetch channel with ID: ${channelId}`);
-          continue;
-        }
-        const noNewLecturesEmbed = new Discord.EmbedBuilder()
-          .setTitle("Cancelled Lectures")
-          .setDescription(
-            "**Lectures not published yet. Use /refresh to check again.**"
-          )
-          .setColor("Random")
-          .setFooter({
-            text: `Last Checked: ${new Date().toLocaleString("en-GB", {
-              timeZone: "Europe/Amsterdam",
-              dateStyle: "full",
-              timeStyle: "short",
-            })}`,
-          });
+    await runCronJob2();
+  });
 
-        console.log(
-          `Sending No Lectures Found embed in server: "${guild.name}", channel: "${channel.name}"`
-        );
-        await channel.send({ embeds: [noNewLecturesEmbed] });
-        setLastMessageId(channelId, message.id);
-      }
-    }
-    lecturesFound = false;
-    isCronJobRunning = false;
+  //Refresh the embed every 5 minutes between 7:02am till 14:30pm
+  cron.schedule("2-59/5 7-14 * * 1-5", async () => {
+    await refreshEmbedEvery5Minutes();
   });
 });
 
@@ -253,7 +227,12 @@ async function runCronJob() {
           } else {
             lecturesFound = true;
             isCronJobRunning = false;
-            console.log("Lectures found. Sending Lectures....in server: ", guild.name , "channel: ", channel.name);
+            console.log(
+              "Lectures found. Sending Lectures....in server: ",
+              guild.name,
+              "channel: ",
+              channel.name
+            );
             const message = await channel.send({ embeds: [embed] });
             setLastMessageId(channelId, message.id);
           }
@@ -281,6 +260,115 @@ async function runCronJob() {
   } finally {
     isCronJobRunning = false;
   }
+}
+
+async function runCronJob2() {
+  if (!lecturesFound) {
+    for (const channelId of config.channelIds) {
+      const channel = await client.channels.fetch(channelId);
+      const guild = channel.guild;
+      if (!channel) {
+        console.error(`Failed to fetch channel with ID: ${channelId}`);
+        continue;
+      }
+      const noNewLecturesEmbed = new Discord.EmbedBuilder()
+        .setTitle("Cancelled Lectures")
+        .setDescription(
+          "**Lectures not published yet. Use /refresh to check again.**"
+        )
+        .setColor("Random")
+        .setFooter({
+          text: `Last Checked: ${new Date().toLocaleString("en-GB", {
+            timeZone: "Europe/Amsterdam",
+            dateStyle: "full",
+            timeStyle: "short",
+          })}`,
+        });
+
+      console.log(
+        `Sending No Lectures Found embed in server: "${guild.name}", channel: "${channel.name}"`
+      );
+      await channel.send({ embeds: [noNewLecturesEmbed] });
+      setLastMessageId(channelId, message.id);
+    }
+  }
+  lecturesFound = false;
+  isCronJobRunning = false;
+}
+
+async function refreshEmbedEvery5Minutes() {
+  isCronJobRunning = true;
+  try {
+    const { embed, date } = await fetchCancelledLectures();
+    if (embed) {
+      if (config.channelIds.includes(interaction.channel.id)) {
+        const lastMessageId = getLastMessageId(interaction.channel.id);
+        const now = new Date().toLocaleString("en-US", {
+          timeZone: "Europe/Amsterdam",
+          dateStyle: "full",
+          timeStyle: "short",
+        });
+        embed.setFooter({ text: `Last Refreshed: ${now}` });
+
+        if (lastMessageId) {
+          try {
+            const message = await interaction.channel.messages.fetch(
+              lastMessageId
+            );
+            await message.edit({ embeds: [embed] });
+            await interaction.reply({
+              content: "The cancelled lectures embed has been updated.",
+              ephemeral: true,
+            });
+          } catch (fetchError) {
+            const message = await interaction.reply({
+              embeds: [embed],
+              fetchReply: true,
+            });
+            setLastMessageId(interaction.channel.id, message.id);
+            await interaction.followUp({
+              content: "The cancelled lectures embed has been sent.",
+              ephemeral: true,
+            });
+          }
+        } else {
+          const message = await interaction.reply({
+            embeds: [embed],
+            fetchReply: true,
+          });
+          setLastMessageId(interaction.channel.id, message.id);
+          console.log(
+            'Successfully refreshed in server "',
+            interaction.guild.name,
+            '"in channel"',
+            interaction.channel.name,
+            '"'
+          );
+          await interaction.followUp({
+            content: "The cancelled lectures embed has been sent.",
+            ephemeral: true,
+          });
+        }
+      } else {
+        await interaction.reply({
+          content: "This command can only be used in the designated channel.",
+          ephemeral: true,
+        });
+      }
+    } else {
+      await interaction.reply({
+        content: "Failed to fetch the latest cancelled lectures.",
+        ephemeral: true,
+      });
+    }
+  } catch (error) {
+    console.error("Error executing refresh command:", error);
+    await interaction.reply({
+      content: "An error occurred while refreshing the cancelled lectures.",
+      ephemeral: true,
+    });
+  }
+  isCronJobRunning = false;
 }
 
 // console.log("Testing");
