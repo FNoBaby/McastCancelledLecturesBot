@@ -300,73 +300,28 @@ async function refreshEmbedEvery5Minutes() {
   isCronJobRunning = true;
   try {
     const { embed, date } = await fetchCancelledLectures();
-    if (embed) {
-      if (config.channelIds.includes(interaction.channel.id)) {
-        const lastMessageId = getLastMessageId(interaction.channel.id);
-        const now = new Date().toLocaleString("en-US", {
-          timeZone: "Europe/Amsterdam",
-          dateStyle: "full",
-          timeStyle: "short",
-        });
-        embed.setFooter({ text: `Last Refreshed: ${now}` });
-
-        if (lastMessageId) {
-          try {
-            const message = await interaction.channel.messages.fetch(
-              lastMessageId
-            );
-            await message.edit({ embeds: [embed] });
-            await interaction.reply({
-              content: "The cancelled lectures embed has been updated.",
-              ephemeral: true,
-            });
-          } catch (fetchError) {
-            const message = await interaction.reply({
-              embeds: [embed],
-              fetchReply: true,
-            });
-            setLastMessageId(interaction.channel.id, message.id);
-            await interaction.followUp({
-              content: "The cancelled lectures embed has been sent.",
-              ephemeral: true,
-            });
-          }
-        } else {
-          const message = await interaction.reply({
-            embeds: [embed],
-            fetchReply: true,
-          });
-          setLastMessageId(interaction.channel.id, message.id);
-          console.log(
-            'Successfully refreshed in server "',
-            interaction.guild.name,
-            '"in channel"',
-            interaction.channel.name,
-            '"'
-          );
-          await interaction.followUp({
-            content: "The cancelled lectures embed has been sent.",
-            ephemeral: true,
-          });
-        }
-      } else {
-        await interaction.reply({
-          content: "This command can only be used in the designated channel.",
-          ephemeral: true,
-        });
+    for (const channelId of config.channelIds) {
+      const channel = await client.channels.fetch(channelId);
+      const guild = channel.guild;
+      if (!channel) {
+        console.error(`Failed to fetch channel with ID: ${channelId}`);
+        continue;
       }
-    } else {
-      await interaction.reply({
-        content: "Failed to fetch the latest cancelled lectures.",
-        ephemeral: true,
-      });
+      const lastMessageId = getLastMessageId(channelId);
+      if (lastMessageId) {
+        const lastMessage = await channel.messages.fetch(lastMessageId);
+        const now = new Date().toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', dateStyle: 'full', timeStyle: 'short' });
+        embed.setFooter({ text: `Last Refreshed: ${now}` });
+        await lastMessage.edit({ embeds: [embed] });
+        console.log("Successfully refreshed automatically in server \"", guild.name, "\"in channel\"", channel.name , "\"");
+      } else {
+        console.log("Last Message ID not found. Sending Lectures....");
+        const message = await channel.send({ embeds: [embed] });
+        setLastMessageId(channelId, message.id);
+      }
     }
   } catch (error) {
-    console.error("Error executing refresh command:", error);
-    await interaction.reply({
-      content: "An error occurred while refreshing the cancelled lectures.",
-      ephemeral: true,
-    });
+    console.error("Error executing auto refresh", error);
   }
   isCronJobRunning = false;
 }
