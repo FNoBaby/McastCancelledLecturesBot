@@ -301,6 +301,13 @@ async function refreshEmbedEvery5Minutes() {
   isCronJobRunning = true;
   try {
     const { embed, date } = await fetchCancelledLectures();
+
+    const currentDate = moment.tz("Europe/Amsterdam").startOf("day").toDate();
+    const parsedDate = moment
+      .tz(date, "dddd, MMMM Do YYYY, h:mm:ss a", "Europe/Amsterdam")
+      .startOf("day")
+      .toDate();
+
     for (const channelId of config.channelIds) {
       const channel = await client.channels.fetch(channelId);
       const guild = channel.guild;
@@ -308,9 +315,29 @@ async function refreshEmbedEvery5Minutes() {
         console.error(`Failed to fetch channel with ID: ${channelId}`);
         continue;
       }
+
       const lastMessageId = getLastMessageId(channelId);
       if (lastMessageId) {
         const lastMessage = await channel.messages.fetch(lastMessageId);
+
+        if(!(parsedDate.getTime() === currentDate.getTime())){
+          const noNewLecturesEmbed = new Discord.EmbedBuilder()
+          .setTitle("Cancelled Lectures")
+          .setDescription(
+            "**Lectures not published yet. Use /refresh to check again.**"
+          )
+          .setColor("Random")
+          .setFooter({
+            text: `Last Checked: ${new Date().toLocaleString("en-GB", {
+              timeZone: "Europe/Amsterdam",
+              dateStyle: "full",
+              timeStyle: "short",
+            })}`,
+          });
+          lastMessage.edit({ embeds: [noNewLecturesEmbed] });
+          continue;
+        }
+
         const now = new Date().toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', dateStyle: 'full', timeStyle: 'short' });
         embed.setFooter({ text: `Last Refreshed: ${now}` });
         await lastMessage.edit({ embeds: [embed] });
