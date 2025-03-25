@@ -264,6 +264,7 @@ async function runCronJob() {
 
 async function runCronJob2() {
   if (!lecturesFound) {
+    resetCancelledLecturesArray();
     for (const channelId of config.channelIds) {
       const channel = await client.channels.fetch(channelId);
       const guild = channel.guild;
@@ -288,7 +289,7 @@ async function runCronJob2() {
       console.log(
         `Sending No Lectures Found embed in server: "${guild.name}", channel: "${channel.name}"`
       );
-      await channel.send({ embeds: [noNewLecturesEmbed] });
+      const message = await channel.send({ embeds: [noNewLecturesEmbed] });
       setLastMessageId(channelId, message.id);
     }
   }
