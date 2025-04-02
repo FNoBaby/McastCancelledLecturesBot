@@ -1,5 +1,5 @@
 // Suppress warnings
-process.emitWarning = () => {};
+// process.emitWarning = () => {};
 
 const Discord = require("discord.js");
 const cron = require("node-cron");
@@ -15,8 +15,7 @@ const {
   getLastMessageId,
 } = require("./src/functions/sharedState");
 const moment = require("moment-timezone");
-const getMotivationalQuote = require('./src/functions/getMotivationalQuote');
-const motivatemeCommand = require('./src/commands/motivateme');
+const motivatemeCommand = require("./src/commands/motivateme");
 
 const client = new Discord.Client({
   intents: [
@@ -131,37 +130,12 @@ client.on("ready", async () => {
 
   // Reset lecturesFound at 8:00:05 AM every day and send "lectures not yet published" message if no new lectures were found
   cron.schedule("1 6 * * 1-5", async () => {
-    if (!lecturesFound) {
-      for (const channelId of config.channelIds) {
-        const channel = await client.channels.fetch(channelId);
-        const guild = channel.guild;
-        if (!channel) {
-          console.error(`Failed to fetch channel with ID: ${channelId}`);
-          continue;
-        }
-        const noNewLecturesEmbed = new Discord.EmbedBuilder()
-          .setTitle("Cancelled Lectures")
-          .setDescription(
-            "**Lectures not published yet. Use /refresh to check again.**"
-          )
-          .setColor("Random")
-          .setFooter({
-            text: `Last Checked: ${new Date().toLocaleString("en-GB", {
-              timeZone: "Europe/Amsterdam",
-              dateStyle: "full",
-              timeStyle: "short",
-            })}`,
-          });
+    await runCronJob2();
+  });
 
-        console.log(
-          `Sending No Lectures Found embed in server: "${guild.name}", channel: "${channel.name}"`
-        );
-        await channel.send({ embeds: [noNewLecturesEmbed] });
-        setLastMessageId(channelId, message.id);
-      }
-    }
-    lecturesFound = false;
-    isCronJobRunning = false;
+  //Refresh the embed every 5 minutes between 7:02am till 14:30pm
+  cron.schedule("2-59/5 7-14 * * 1-5", async () => {
+    await refreshEmbedEvery5Minutes();
   });
 });
 
@@ -253,7 +227,12 @@ async function runCronJob() {
           } else {
             lecturesFound = true;
             isCronJobRunning = false;
-            console.log("Lectures found. Sending Lectures....in server: ", guild.name , "channel: ", channel.name);
+            console.log(
+              "Lectures found. Sending Lectures....in server: ",
+              guild.name,
+              "channel: ",
+              channel.name
+            );
             const message = await channel.send({ embeds: [embed] });
             setLastMessageId(channelId, message.id);
           }
@@ -281,6 +260,98 @@ async function runCronJob() {
   } finally {
     isCronJobRunning = false;
   }
+}
+
+async function runCronJob2() {
+  if (!lecturesFound) {
+    resetCancelledLecturesArray();
+    for (const channelId of config.channelIds) {
+      const channel = await client.channels.fetch(channelId);
+      const guild = channel.guild;
+      if (!channel) {
+        console.error(`Failed to fetch channel with ID: ${channelId}`);
+        continue;
+      }
+      const noNewLecturesEmbed = new Discord.EmbedBuilder()
+        .setTitle("Cancelled Lectures")
+        .setDescription(
+          "**Lectures not published yet. Use /refresh to check again.**"
+        )
+        .setColor("Random")
+        .setFooter({
+          text: `Last Checked: ${new Date().toLocaleString("en-GB", {
+            timeZone: "Europe/Amsterdam",
+            dateStyle: "full",
+            timeStyle: "short",
+          })}`,
+        });
+
+      console.log(
+        `Sending No Lectures Found embed in server: "${guild.name}", channel: "${channel.name}"`
+      );
+      const message = await channel.send({ embeds: [noNewLecturesEmbed] });
+      setLastMessageId(channelId, message.id);
+    }
+  }
+  lecturesFound = false;
+  isCronJobRunning = false;
+}
+
+async function refreshEmbedEvery5Minutes() {
+  isCronJobRunning = true;
+  try {
+    const { embed, date } = await fetchCancelledLectures();
+
+    const currentDate = moment.tz("Europe/Amsterdam").startOf("day").toDate();
+    const parsedDate = moment
+      .tz(date, "dddd, MMMM Do YYYY, h:mm:ss a", "Europe/Amsterdam")
+      .startOf("day")
+      .toDate();
+
+    for (const channelId of config.channelIds) {
+      const channel = await client.channels.fetch(channelId);
+      const guild = channel.guild;
+      if (!channel) {
+        console.error(`Failed to fetch channel with ID: ${channelId}`);
+        continue;
+      }
+
+      const lastMessageId = getLastMessageId(channelId);
+      if (lastMessageId) {
+        const lastMessage = await channel.messages.fetch(lastMessageId);
+
+        if(!(parsedDate.getTime() === currentDate.getTime())){
+          const noNewLecturesEmbed = new Discord.EmbedBuilder()
+          .setTitle("Cancelled Lectures")
+          .setDescription(
+            "**Lectures not published yet. Use /refresh to check again.**"
+          )
+          .setColor("Random")
+          .setFooter({
+            text: `Last Checked: ${new Date().toLocaleString("en-GB", {
+              timeZone: "Europe/Amsterdam",
+              dateStyle: "full",
+              timeStyle: "short",
+            })}`,
+          });
+          lastMessage.edit({ embeds: [noNewLecturesEmbed] });
+          continue;
+        }
+
+        const now = new Date().toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', dateStyle: 'full', timeStyle: 'short' });
+        embed.setFooter({ text: `Last Refreshed: ${now}` });
+        await lastMessage.edit({ embeds: [embed] });
+        console.log("Successfully refreshed automatically in server \"", guild.name, "\"in channel\"", channel.name , "\"");
+      } else {
+        console.log("Last Message ID not found. Sending Lectures....");
+        const message = await channel.send({ embeds: [embed] });
+        setLastMessageId(channelId, message.id);
+      }
+    }
+  } catch (error) {
+    console.error("Error executing auto refresh", error);
+  }
+  isCronJobRunning = false;
 }
 
 // console.log("Testing");
