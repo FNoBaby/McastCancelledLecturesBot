@@ -18,13 +18,13 @@ async function fetchCancelledLectures() {
         const $ = cheerio.load(html);
 
         // Extract the date part from the description
-        const rawDatePart = $('article .entry-content h4 strong').first().text().trim() + $('article .entry-content h4 strong').last().text().trim();
-        const datePart = rawDatePart.replace('Cancelled Lectures for ', '').trim();
+        const rawDatePart = $('article .entry-content h4 strong').map((i, el) => $(el).text().trim()).get();
+        const datePart = rawDatePart.join(' ').trim().replace('Cancelled Lectures for ', '');
         const description = `Cancelled Lectures for ${datePart}`;
-
+        
         // Parse the date string into a Date object
         const parsedDate = moment.tz(datePart, 'dddd Do MMMM, YYYY', 'Europe/Amsterdam').toDate();
-
+        console.log('Parsed date:', parsedDate);
         // Extract class names and the classes they are cancelled for
         const cancelledLectures = [];
         $('article .entry-content ul li').each((index, element) => {
@@ -74,4 +74,6 @@ async function resetCancelledLecturesArray(){
     lastFetchedLectures = [];
     console.log('Cancelled lectures array reset.');
 }
+
+fetchCancelledLectures();
 module.exports = {fetchCancelledLectures , resetCancelledLecturesArray};
