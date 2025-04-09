@@ -116,25 +116,25 @@ client.on("ready", async () => {
   // });
 
   // Schedule cron jobs
-  cron.schedule("00-59 5 * * 1-5", async () => {
+  cron.schedule("00-59 7 * * 1-5", async () => {
     // Runs every minute from 7:30 AM to 7:59 AM (Mon-Fri)
     console.log("Cron job scheduled at 7:30 AM...");
     await runCronJob();
   });
 
-  cron.schedule("0 6 * * 1-5", async () => {
+  cron.schedule("0 8 * * 1-5", async () => {
     // Runs exactly at 8:00 AM (Mon-Fri)
     console.log("Cron job scheduled at 8:00 AM...");
     await runCronJob();
   });
 
   // Reset lecturesFound at 8:00:05 AM every day and send "lectures not yet published" message if no new lectures were found
-  cron.schedule("1 6 * * 1-5", async () => {
+  cron.schedule("1 8 * * 1-5", async () => {
     await runCronJob2();
   });
 
   //Refresh the embed every 5 minutes between 7:02am till 14:30pm
-  cron.schedule("2-59/5 7-14 * * 1-5", async () => {
+  cron.schedule("2-59/7 7-14 * * 1-5", async () => {
     await refreshEmbedEvery5Minutes();
   });
 });
