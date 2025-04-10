@@ -13,13 +13,15 @@ async function fetchCancelledLectures() {
 
         //Save HTML into a file for debugging
         // const fs = require('fs');
-        // fs.writeFileSync('cancelled-lectures.html', html);
+        // fs.writeFileSync('cancelled-lectures-2.html', html);
 
         const $ = cheerio.load(html);
 
         // Extract the date part from the description
         const rawDatePart = $('article .entry-content h4 strong').map((i, el) => $(el).text().trim()).get();
-        const datePart = rawDatePart.join(' ').trim().replace('Cancelled Lectures for ', '');
+        let datePart = rawDatePart.join(' ').trim().replace('Cancelled Lectures for ', '');
+        datePart = datePart.replace(/(\d+)\s+th/, '$1th'); // Fix the date format if needed
+
         const description = `Cancelled Lectures for ${datePart}`;
 
         // Parse the date string into a Date object
@@ -61,6 +63,10 @@ async function fetchCancelledLectures() {
         }
 
         // Return the embed and the date
+        // console.log('Fetched cancelled lectures:', lastFetchedLectures);
+        console.log('Parsed date:', parsedDate);
+        console.log('Date part:', datePart);
+        console.log('Description:', description);
         return { embed, date: parsedDate };
     } catch (error) {
         console.error('Error fetching cancelled lectures:', error);

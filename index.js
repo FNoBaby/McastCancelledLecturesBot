@@ -1,5 +1,5 @@
 // Suppress warnings
-// process.emitWarning = () => {};
+process.emitWarning = () => {};
 
 const Discord = require("discord.js");
 const cron = require("node-cron");
