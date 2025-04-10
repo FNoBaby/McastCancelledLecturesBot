@@ -64,9 +64,9 @@ async function fetchCancelledLectures() {
 
         // Return the embed and the date
         // console.log('Fetched cancelled lectures:', lastFetchedLectures);
-        console.log('Parsed date:', parsedDate);
-        console.log('Date part:', datePart);
-        console.log('Description:', description);
+        // console.log('Parsed date:', parsedDate);
+        // console.log('Date part:', datePart);
+        // console.log('Description:', description);
         return { embed, date: parsedDate };
     } catch (error) {
         console.error('Error fetching cancelled lectures:', error);
