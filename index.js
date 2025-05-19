@@ -1,5 +1,5 @@
 // Suppress warnings
-// process.emitWarning = () => {};
+process.emitWarning = () => {};
 
 const Discord = require("discord.js");
 const cron = require("node-cron");
@@ -134,7 +134,7 @@ client.on("ready", async () => {
   });
 
   //Refresh the embed every 5 minutes between 7:02am till 14:30pm
-  cron.schedule("2-59/5 7-14 * * 1-5", async () => {
+  cron.schedule("2-59/5 5-13 * * 1-5", async () => {
     await refreshEmbedEvery5Minutes();
   });
 });
