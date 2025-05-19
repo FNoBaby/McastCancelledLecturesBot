@@ -39,13 +39,12 @@ module.exports = {
       setTimeout(() => cooldowns.delete(userId), cooldownAmount);
     }
 
-    try {
-      const { embed, date } = await fetchCancelledLectures();
-      const currentDate = moment.tz("Europe/Amsterdam").startOf("day").toDate();
-      const parsedDate = moment
-        .tz(date, "dddd, MMMM Do YYYY, h:mm:ss a", "Europe/Amsterdam")
-        .startOf("day")
-        .toDate();
+    try {      const { embed, date } = await fetchCancelledLectures();      // Get the current date in Amsterdam timezone
+      const currentDateInAmsterdam = moment.tz("Europe/Amsterdam").startOf("day");
+      
+      // Convert the parsed date to Amsterdam timezone for comparison
+      const dateObject = date instanceof Date ? date : new Date();
+      const parsedDateInAmsterdam = moment(dateObject).tz("Europe/Amsterdam").startOf("day");
 
       if (embed) {
         if (config.channelIds.includes(interaction.channel.id)) {
@@ -63,7 +62,7 @@ module.exports = {
                 lastMessageId
               );
 
-              if (!(currentDate.getTime() === parsedDate.getTime())) {
+              if (!currentDateInAmsterdam.isSame(parsedDateInAmsterdam, 'day')) {
                 const noNewLecturesEmbed = new Discord.EmbedBuilder()
                   .setTitle("Cancelled Lectures")
                   .setDescription(

@@ -26,10 +26,9 @@ module.exports = {
         return interaction.editReply({
           content: "Failed to fetch the latest cancelled lectures.",
         });
-      }
-
-      const currentDate = moment.tz("Europe/Amsterdam").startOf("day").toDate();
-      const parsedDate = moment(date).startOf("day").toDate(); // Use date as-is from fetchCancelledLectures
+      }      const currentDate = moment.tz("Europe/Amsterdam").startOf("day").toDate();
+      // Fix date parsing to match the fetchCancelledLectures.js implementation
+      const parsedDate = date instanceof Date ? date : new Date(); // Use the Date object returned from fetchCancelledLectures
       const now = new Date().toLocaleString("en-US", {
         timeZone: "Europe/Amsterdam",
         dateStyle: "full",

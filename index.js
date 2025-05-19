@@ -185,18 +185,17 @@ async function runCronJob() {
   isCronJobRunning = true;
   try {
     await resetCancelledLecturesArray();
-    const { embed, date } = (await fetchCancelledLectures()) || {};
-    if (!embed || !date) {
+    const { embed, date } = (await fetchCancelledLectures()) || {};    if (!embed || !date) {
       console.error("Failed to fetch the latest cancelled lectures.");
       return;
-    }
-    const currentDate = moment.tz("Europe/Amsterdam").startOf("day").toDate();
-    const parsedDate = moment
-      .tz(date, "dddd, MMMM Do YYYY, h:mm:ss a", "Europe/Amsterdam")
-      .startOf("day")
-      .toDate();
-
-    if (embed && parsedDate.getTime() === currentDate.getTime()) {
+    }    // Get the current date in Amsterdam timezone
+    const currentDateInAmsterdam = moment.tz("Europe/Amsterdam").startOf("day");
+    
+    // Convert the parsed date to Amsterdam timezone for comparison
+    const dateObject = date instanceof Date ? date : new Date();
+    const parsedDateInAmsterdam = moment(dateObject).tz("Europe/Amsterdam").startOf("day");
+    
+    if (embed && currentDateInAmsterdam.isSame(parsedDateInAmsterdam, 'day')) {
       for (const channelId of config.channelIds) {
         const channel = await client.channels.fetch(channelId);
         const guild = channel.guild;
@@ -300,13 +299,12 @@ async function runCronJob2() {
 async function refreshEmbedEvery5Minutes() {
   isCronJobRunning = true;
   try {
-    const { embed, date } = await fetchCancelledLectures();
-
-    const currentDate = moment.tz("Europe/Amsterdam").startOf("day").toDate();
-    const parsedDate = moment
-      .tz(date, "dddd, MMMM Do YYYY, h:mm:ss a", "Europe/Amsterdam")
-      .startOf("day")
-      .toDate();
+    const { embed, date } = await fetchCancelledLectures();    // Get the current date in Amsterdam timezone
+    const currentDateInAmsterdam = moment.tz("Europe/Amsterdam").startOf("day");
+    
+    // Convert the parsed date to Amsterdam timezone for comparison
+    const dateObject = date instanceof Date ? date : new Date();
+    const parsedDateInAmsterdam = moment(dateObject).tz("Europe/Amsterdam").startOf("day");
 
     for (const channelId of config.channelIds) {
       const channel = await client.channels.fetch(channelId);
@@ -320,7 +318,7 @@ async function refreshEmbedEvery5Minutes() {
       if (lastMessageId) {
         const lastMessage = await channel.messages.fetch(lastMessageId);
 
-        if(!(parsedDate.getTime() === currentDate.getTime())){
+        if(!currentDateInAmsterdam.isSame(parsedDateInAmsterdam, 'day')){
           const noNewLecturesEmbed = new Discord.EmbedBuilder()
           .setTitle("Cancelled Lectures")
           .setDescription(
