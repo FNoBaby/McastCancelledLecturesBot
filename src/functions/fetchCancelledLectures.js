@@ -85,52 +85,86 @@ async function fetchCancelledLectures() {
         }        // Extract class names and the classes they are cancelled for with more robust selectors
         const cancelledLectures = [];
         
-        // Try multiple selectors for finding the lecture information
-        const possibleLectureSelectors = [
-            'article .entry-content ul li',   // Original selector (list items)
-            'article .entry-content p',       // Current format (paragraphs)
-            '.entry-content p',               // More generic paragraphs
-            '.entry-content div'              // Any divs in entry content
-        ];
+        // Use the specific selector for paragraphs in entry content
+        const elements = $('.entry-content p');
         
-        // Define possible separators
-        const possibleSeparators = ['—', '-', '&#8212;', '–'];
-        
-        // Try each selector
-        for (const selector of possibleLectureSelectors) {
-            const elements = $(selector);
-            let foundLectures = false;
+        elements.each((index, element) => {
+            const $elem = $(element);
+            let text = $elem.text().trim();
             
-            elements.each((index, element) => {
-                const text = $(element).text().trim();
-                
-                // Skip empty elements or headers
-                if (!text || text.includes('Cancelled Lectures for') || text.length < 5) {
-                    return; // continue to next element
-                }
-                
-                // Try each separator
-                for (const separator of possibleSeparators) {
-                    if (text.includes(separator)) {
-                        const parts = text.split(separator).map(item => item.trim()).filter(Boolean);
+            // Skip empty elements, headers, or introduction text
+            if (!text || 
+                text.includes('Cancelled Lectures for') || 
+                text.includes('This page will be updated') ||
+                text.includes('Please check it every day') ||
+                text.length < 5) {
+                return; // continue to next element
+            }
+            
+            // Handle different separators (em dash, regular dash, etc.)
+            const separators = ['—', '–', '&#8212;', ' — ', ' – ', ' &#8212; '];
+            let found = false;
+            
+            for (const separator of separators) {
+                if (text.includes(separator)) {
+                    const parts = text.split(separator).map(item => item.trim()).filter(Boolean);
+                    
+                    if (parts.length >= 2) {
+                        const className = parts[0].trim();
+                        const cancelledFor = parts.slice(1).join(' — ').trim(); // Join back if multiple separators
+                        const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
                         
-                        if (parts.length >= 2) {
-                            const className = parts[0];
-                            const cancelledFor = parts[1];
-                            const cancelledForList = cancelledFor.split(',').map(item => item.trim());
-                            cancelledLectures.push({ className, cancelledFor: cancelledForList });
-                            foundLectures = true;
-                            break; // Found a separator that works
+                        cancelledLectures.push({ 
+                            className: className, 
+                            cancelledFor: cancelledForList 
+                        });
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Handle cases where there's no separator but there are strong tags
+            if (!found) {
+                const strongText = $elem.find('strong').text().trim();
+                if (strongText) {
+                    // Extract the text after the strong tag
+                    const fullText = text;
+                    const afterStrong = fullText.replace(strongText, '').trim();
+                    
+                    if (afterStrong && afterStrong.length > 2) {
+                        // Clean up any leftover separators or whitespace
+                        const cleanAfterStrong = afterStrong.replace(/^[—–\-\s]+/, '').trim();
+                        
+                        if (cleanAfterStrong) {
+                            const cancelledForList = cleanAfterStrong.split(',').map(item => item.trim()).filter(Boolean);
+                            cancelledLectures.push({ 
+                                className: strongText, 
+                                cancelledFor: cancelledForList 
+                            });
+                            found = true;
                         }
                     }
                 }
-            });
-            
-            if (foundLectures) {
-                console.log(`Found lectures using selector: ${selector}`);
-                break; // We found lectures with this selector, no need to try others
             }
-        }
+            
+            // If still no separator found, check if it's a course code pattern without proper formatting
+            if (!found && text.match(/[A-Z]{2,}[-\d]/)) {
+                // This looks like a course code, try to split it intelligently
+                // Look for patterns like "COURSE-CODE text" or "COURSE text"
+                const match = text.match(/^([A-Z][A-Z0-9\-]+(?:\s+[A-Za-z\s]+?)?)\s+([A-Z]{2,}[-\d].*)$/);
+                if (match) {
+                    const className = match[1].trim();
+                    const cancelledFor = match[2].trim();
+                    const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
+                    
+                    cancelledLectures.push({ 
+                        className: className, 
+                        cancelledFor: cancelledForList 
+                    });
+                }
+            }
+        });
         
         console.log(`Found ${cancelledLectures.length} cancelled lectures`);        // Check if we actually found any lectures
         if (cancelledLectures.length === 0) {
