@@ -9,64 +9,69 @@ let lastFetchedDate = '';
 async function fetchCancelledLectures() {
     try {
         const response = await axios.get('https://iict.mcast.edu.mt/cancelled-lectures/');
-        const html = response.data;        //Save HTML into a file for debugging
+        const html = response.data;
+        
+        // Save HTML into a file for debugging
         const fs = require('fs');
         fs.writeFileSync('cancelled-lectures-2.html', html);
 
-        const $ = cheerio.load(html);        // Extract the date part from the description - make it more robust by checking multiple selectors
+        const $ = cheerio.load(html);
+        
+        // Extract the date from h4 strong tag (new format)
         let rawDatePart = '';
         
-        // Try different selectors to find the date
-        const possibleDateSelectors = [
-            'article .entry-content h4 strong', // Original selector
-            'article .entry-content p strong',  // Current format
-            'article .entry-content strong',    // Generic strong tag
-            '.entry-content p strong'           // Even more generic
-        ];
+        // Try the new format first (h4 strong)
+        const h4DateElement = $('article .entry-content h4 strong');
+        if (h4DateElement.length > 0) {
+            rawDatePart = h4DateElement.first().text().trim();
+            console.log(`Found date in h4 strong: ${rawDatePart}`);
+        }
         
-        // Try each selector until we find date content
-        for (const selector of possibleDateSelectors) {
-            const dateElements = $(selector);
-            if (dateElements.length > 0) {
-                // Combine text from all strong elements
-                let combinedText = '';
-                dateElements.each((_, elem) => {
-                    combinedText += $(elem).text().trim() + ' ';
-                });
-                
-                if (combinedText.includes('Cancelled Lectures for') || 
-                    combinedText.includes('May') || 
-                    combinedText.includes('June') || 
-                    combinedText.includes('July') ||
-                    combinedText.includes('August') ||
-                    combinedText.includes('September') ||
-                    combinedText.includes('October') ||
-                    combinedText.includes('November') ||
-                    combinedText.includes('December') ||
-                    combinedText.includes('January') ||
-                    combinedText.includes('February') ||
-                    combinedText.includes('March') ||
-                    combinedText.includes('April')) {
+        // If not found, try the old selectors as fallback
+        if (!rawDatePart) {
+            const possibleDateSelectors = [
+                'article .entry-content p strong',
+                'article .entry-content strong',
+                '.entry-content p strong'
+            ];
+            
+            for (const selector of possibleDateSelectors) {
+                const dateElements = $(selector);
+                if (dateElements.length > 0) {
+                    let combinedText = '';
+                    dateElements.each((_, elem) => {
+                        combinedText += $(elem).text().trim() + ' ';
+                    });
                     
-                    rawDatePart = combinedText.trim();
-                    console.log(`Found date using selector: ${selector}`);
-                    console.log(`Raw date: ${rawDatePart}`);
-                    break;
+                    if (combinedText.includes('Cancelled Lectures for') || 
+                        combinedText.includes('Monday') || combinedText.includes('Tuesday') || 
+                        combinedText.includes('Wednesday') || combinedText.includes('Thursday') || 
+                        combinedText.includes('Friday') || combinedText.includes('Saturday') || 
+                        combinedText.includes('Sunday') ||
+                        combinedText.includes('January') || combinedText.includes('February') ||
+                        combinedText.includes('March') || combinedText.includes('April') ||
+                        combinedText.includes('May') || combinedText.includes('June') ||
+                        combinedText.includes('July') || combinedText.includes('August') ||
+                        combinedText.includes('September') || combinedText.includes('October') ||
+                        combinedText.includes('November') || combinedText.includes('December')) {
+                        
+                        rawDatePart = combinedText.trim();
+                        console.log(`Found date using fallback selector: ${selector}`);
+                        console.log(`Raw date: ${rawDatePart}`);
+                        break;
+                    }
                 }
             }
         }
         
-        // If no date found, try to construct it from the page title or use current date
+        // If no date found, use current date
         if (!rawDatePart) {
-            const pageTitle = $('h2.page-title').text().trim();
-            if (pageTitle.includes('Cancelled Lectures')) {
-                const currentDate = new Date();
-                rawDatePart = `Cancelled Lectures for ${currentDate.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`;
-                console.log(`No date found in content, using current date: ${rawDatePart}`);
-            }
+            const currentDate = new Date();
+            rawDatePart = currentDate.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+            console.log(`No date found in content, using current date: ${rawDatePart}`);
         }
         
-        // Extract the date part
+        // Clean up the date part
         let datePart = rawDatePart;
         if (datePart.includes('Cancelled Lectures for')) {
             datePart = datePart.replace('Cancelled Lectures for', '').trim();
@@ -75,98 +80,93 @@ async function fetchCancelledLectures() {
         const description = `Cancelled Lectures for ${datePart}`;
         console.log(`Parsed description: ${description}`);
 
-        // Parse the date string into a Date object with flexible format handling
+        // Parse the date string into a Date object
         let parsedDate;
         try {
             parsedDate = moment.tz(datePart, ['dddd Do MMMM, YYYY', 'dddd Do MMMM YYYY', 'D MMMM YYYY', 'MMMM D, YYYY'], 'Europe/Amsterdam').toDate();
         } catch (e) {
             console.log(`Error parsing date: ${e.message}, using current date`);
             parsedDate = new Date();
-        }        // Extract class names and the classes they are cancelled for with more robust selectors
+        }
+
+        // Extract cancelled lectures
         const cancelledLectures = [];
         
-        // Use the specific selector for paragraphs in entry content
-        const elements = $('.entry-content p');
-        
-        elements.each((index, element) => {
-            const $elem = $(element);
-            let text = $elem.text().trim();
-            
-            // Skip empty elements, headers, or introduction text
-            if (!text || 
-                text.includes('Cancelled Lectures for') || 
-                text.includes('This page will be updated') ||
-                text.includes('Please check it every day') ||
-                text.length < 5) {
-                return; // continue to next element
-            }
-            
-            // Handle different separators (em dash, regular dash, etc.)
-            const separators = ['—', '–', '&#8212;', ' — ', ' – ', ' &#8212; '];
-            let found = false;
-            
-            for (const separator of separators) {
-                if (text.includes(separator)) {
-                    const parts = text.split(separator).map(item => item.trim()).filter(Boolean);
+        // Process the main cancelled lectures section (first p tag after h4)
+        const mainLecturesP = $('article .entry-content h4').next('p');
+        if (mainLecturesP.length > 0) {
+            const mainHtml = mainLecturesP.html();
+            if (mainHtml) {
+                // Split by <br> or <br /> tags to get individual lecture lines
+                const lectureLines = mainHtml.split(/<br\s*\/?>/i);
+                
+                lectureLines.forEach(line => {
+                    // Remove HTML tags and decode entities
+                    const cleanLine = $('<div>').html(line).text().trim();
                     
-                    if (parts.length >= 2) {
-                        const className = parts[0].trim();
-                        const cancelledFor = parts.slice(1).join(' — ').trim(); // Join back if multiple separators
-                        const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
-                        
-                        cancelledLectures.push({ 
-                            className: className, 
-                            cancelledFor: cancelledForList 
-                        });
-                        found = true;
-                        break;
-                    }
-                }
-            }
-            
-            // Handle cases where there's no separator but there are strong tags
-            if (!found) {
-                const strongText = $elem.find('strong').text().trim();
-                if (strongText) {
-                    // Extract the text after the strong tag
-                    const fullText = text;
-                    const afterStrong = fullText.replace(strongText, '').trim();
-                    
-                    if (afterStrong && afterStrong.length > 2) {
-                        // Clean up any leftover separators or whitespace
-                        const cleanAfterStrong = afterStrong.replace(/^[—–\-\s]+/, '').trim();
-                        
-                        if (cleanAfterStrong) {
-                            const cancelledForList = cleanAfterStrong.split(',').map(item => item.trim()).filter(Boolean);
-                            cancelledLectures.push({ 
-                                className: strongText, 
-                                cancelledFor: cancelledForList 
-                            });
-                            found = true;
+                    if (cleanLine && !cleanLine.includes('UNTIL FURTHER NOTICE')) {
+                        // Parse lines with em dash separator
+                        if (cleanLine.includes('—') || cleanLine.includes('&#8212;')) {
+                            const parts = cleanLine.split(/[—]|&#8212;/).map(part => part.trim());
+                            if (parts.length >= 2) {
+                                const className = parts[0].trim();
+                                const cancelledFor = parts.slice(1).join(' — ').trim();
+                                const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
+                                
+                                if (className && cancelledForList.length > 0) {
+                                    cancelledLectures.push({ 
+                                        className: className, 
+                                        cancelledFor: cancelledForList 
+                                    });
+                                }
+                            }
                         }
                     }
-                }
+                });
             }
+        }
+        
+        // Process the "UNTIL FURTHER NOTICE" section
+        const untilNoticeDiv = $('.wp-block-group .wp-block-group__inner-container p');
+        untilNoticeDiv.each((_, element) => {
+            const $elem = $(element);
+            const html = $elem.html();
             
-            // If still no separator found, check if it's a course code pattern without proper formatting
-            if (!found && text.match(/[A-Z]{2,}[-\d]/)) {
-                // This looks like a course code, try to split it intelligently
-                // Look for patterns like "COURSE-CODE text" or "COURSE text"
-                const match = text.match(/^([A-Z][A-Z0-9\-]+(?:\s+[A-Za-z\s]+?)?)\s+([A-Z]{2,}[-\d].*)$/);
-                if (match) {
-                    const className = match[1].trim();
-                    const cancelledFor = match[2].trim();
-                    const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
+            if (html && html.includes('UNTIL FURTHER NOTICE')) {
+                // Split by <br> tags to get individual lecture lines
+                const lectureLines = html.split(/<br\s*\/?>/i);
+                
+                lectureLines.forEach(line => {
+                    // Remove HTML tags and decode entities
+                    const cleanLine = $('<div>').html(line).text().trim();
                     
-                    cancelledLectures.push({ 
-                        className: className, 
-                        cancelledFor: cancelledForList 
-                    });
-                }
+                    if (cleanLine && 
+                        !cleanLine.includes('UNTIL FURTHER NOTICE') && 
+                        cleanLine.length > 5 &&
+                        (cleanLine.includes('—') || cleanLine.includes('&#8212;'))) {
+                        
+                        // Parse lines with em dash separator
+                        const parts = cleanLine.split(/[—]|&#8212;/).map(part => part.trim());
+                        if (parts.length >= 2) {
+                            const className = parts[0].trim();
+                            const cancelledFor = parts.slice(1).join(' — ').trim();
+                            const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
+                            
+                            if (className && cancelledForList.length > 0) {
+                                cancelledLectures.push({ 
+                                    className: className + ' (Until Further Notice)', 
+                                    cancelledFor: cancelledForList 
+                                });
+                            }
+                        }
+                    }
+                });
             }
         });
         
-        console.log(`Found ${cancelledLectures.length} cancelled lectures`);        // Check if we actually found any lectures
+        console.log(`Found ${cancelledLectures.length} cancelled lectures`);
+        
+        // Check if we actually found any lectures
         if (cancelledLectures.length === 0) {
             console.warn("No cancelled lectures found in the HTML. The page structure may have changed.");
             // Create a basic embed with a warning
@@ -212,7 +212,9 @@ async function fetchCancelledLectures() {
         }
 
         // Return the embed and the date
-        return { embed, date: parsedDate, lectures: cancelledLectures };    } catch (error) {
+        return { embed, date: parsedDate, lectures: cancelledLectures };
+        
+    } catch (error) {
         console.error('Error fetching cancelled lectures:', error);
         
         // Create an error embed
@@ -234,6 +236,7 @@ async function resetCancelledLecturesArray(){
     lastFetchedLectures = [];
     console.log('Cancelled lectures array reset.');
 }
+
 // Function to test the fetching without affecting the Discord bot
 async function testFetch() {
     console.log("Testing fetch cancelled lectures...");
