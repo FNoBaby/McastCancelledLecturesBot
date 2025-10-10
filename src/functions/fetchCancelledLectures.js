@@ -92,61 +92,68 @@ async function fetchCancelledLectures() {
         // Extract cancelled lectures
         const cancelledLectures = [];
         
+        // Helper function to decode HTML entities and clean text
+        const decodeAndClean = (text) => {
+            return text
+                .replace(/&#8212;/g, '—')  // Replace HTML entity for em dash
+                .replace(/&mdash;/g, '—')   // Replace named entity for em dash
+                .replace(/&nbsp;/g, ' ')    // Replace non-breaking space
+                .replace(/&amp;/g, '&')    // Replace ampersand
+                .trim();
+        };
+        
         // Process the main cancelled lectures section (first p tag after h4)
         const mainLecturesP = $('article .entry-content h4').next('p');
         if (mainLecturesP.length > 0) {
-            const mainHtml = mainLecturesP.html();
-            if (mainHtml) {
-                // Split by <br> or <br /> tags to get individual lecture lines
-                const lectureLines = mainHtml.split(/<br\s*\/?>/i);
-                
-                lectureLines.forEach(line => {
-                    // Remove HTML tags and decode entities
-                    const cleanLine = $('<div>').html(line).text().trim();
-                    
-                    if (cleanLine && !cleanLine.includes('UNTIL FURTHER NOTICE')) {
-                        // Parse lines with em dash separator
-                        if (cleanLine.includes('—') || cleanLine.includes('&#8212;')) {
-                            const parts = cleanLine.split(/[—]|&#8212;/).map(part => part.trim());
-                            if (parts.length >= 2) {
-                                const className = parts[0].trim();
-                                const cancelledFor = parts.slice(1).join(' — ').trim();
-                                const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
-                                
-                                if (className && cancelledForList.length > 0) {
-                                    cancelledLectures.push({ 
-                                        className: className, 
-                                        cancelledFor: cancelledForList 
-                                    });
-                                }
+            // Get the text content and decode entities
+            const mainText = mainLecturesP.text();
+            const decodedText = decodeAndClean(mainText);
+            
+            // Split by line breaks and process each line
+            const lines = decodedText.split(/\n/).map(line => line.trim()).filter(Boolean);
+            
+            lines.forEach(line => {
+                if (line && !line.includes('UNTIL FURTHER NOTICE') && !line.includes('***')) {
+                    // Parse lines with em dash separator
+                    if (line.includes('—')) {
+                        const parts = line.split('—').map(part => part.trim());
+                        if (parts.length >= 2) {
+                            const className = parts[0].trim();
+                            const cancelledFor = parts.slice(1).join(' — ').trim();
+                            const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
+                            
+                            if (className && cancelledForList.length > 0) {
+                                cancelledLectures.push({ 
+                                    className: className, 
+                                    cancelledFor: cancelledForList 
+                                });
                             }
                         }
                     }
-                });
-            }
+                }
+            });
         }
         
         // Process the "UNTIL FURTHER NOTICE" section
         const untilNoticeDiv = $('.wp-block-group .wp-block-group__inner-container p');
         untilNoticeDiv.each((_, element) => {
             const $elem = $(element);
-            const html = $elem.html();
+            const text = $elem.text();
+            const decodedText = decodeAndClean(text);
             
-            if (html && html.includes('UNTIL FURTHER NOTICE')) {
-                // Split by <br> tags to get individual lecture lines
-                const lectureLines = html.split(/<br\s*\/?>/i);
+            if (decodedText.includes('UNTIL FURTHER NOTICE')) {
+                // Split by line breaks and process each line
+                const lines = decodedText.split(/\n/).map(line => line.trim()).filter(Boolean);
                 
-                lectureLines.forEach(line => {
-                    // Remove HTML tags and decode entities
-                    const cleanLine = $('<div>').html(line).text().trim();
-                    
-                    if (cleanLine && 
-                        !cleanLine.includes('UNTIL FURTHER NOTICE') && 
-                        cleanLine.length > 5 &&
-                        (cleanLine.includes('—') || cleanLine.includes('&#8212;'))) {
+                lines.forEach(line => {
+                    if (line && 
+                        !line.includes('UNTIL FURTHER NOTICE') && 
+                        !line.includes('***') &&
+                        line.length > 5 &&
+                        line.includes('—')) {
                         
                         // Parse lines with em dash separator
-                        const parts = cleanLine.split(/[—]|&#8212;/).map(part => part.trim());
+                        const parts = line.split('—').map(part => part.trim());
                         if (parts.length >= 2) {
                             const className = parts[0].trim();
                             const cancelledFor = parts.slice(1).join(' — ').trim();
@@ -166,9 +173,23 @@ async function fetchCancelledLectures() {
         
         console.log(`Found ${cancelledLectures.length} cancelled lectures`);
         
+        // Debug: log what we found
+        console.log('Cancelled lectures found:');
+        cancelledLectures.forEach((lecture, index) => {
+            console.log(`${index + 1}. ${lecture.className} — ${lecture.cancelledFor.join(', ')}`);
+        });
+        
         // Check if we actually found any lectures
         if (cancelledLectures.length === 0) {
             console.warn("No cancelled lectures found in the HTML. The page structure may have changed.");
+            
+            // Debug: log the raw text we're trying to parse
+            const mainP = $('article .entry-content h4').next('p');
+            const untilNoticeP = $('.wp-block-group .wp-block-group__inner-container p');
+            
+            console.log('Main P text:', mainP.text());
+            console.log('Until Notice P text:', untilNoticeP.text());
+            
             // Create a basic embed with a warning
             const embed = new EmbedBuilder()
                 .setTitle("Cancelled Lectures")
