@@ -17,14 +17,23 @@ async function fetchCancelledLectures() {
 
         const $ = cheerio.load(html);
         
-        // Extract the date from h4 strong tag (new format)
+        // Extract the date from the new structure (h3 strong tag)
         let rawDatePart = '';
         
-        // Try the new format first (h4 strong)
-        const h4DateElement = $('article .entry-content h4 strong');
-        if (h4DateElement.length > 0) {
-            rawDatePart = h4DateElement.first().text().trim();
-            console.log(`Found date in h4 strong: ${rawDatePart}`);
+        // Try the newest format first (h3 strong)
+        const h3DateElement = $('article .entry-content h3 strong');
+        if (h3DateElement.length > 0) {
+            rawDatePart = h3DateElement.first().text().trim();
+            console.log(`Found date in h3 strong: ${rawDatePart}`);
+        }
+        
+        // Try the previous format (h4 strong) as fallback
+        if (!rawDatePart) {
+            const h4DateElement = $('article .entry-content h4 strong');
+            if (h4DateElement.length > 0) {
+                rawDatePart = h4DateElement.first().text().trim();
+                console.log(`Found date in h4 strong: ${rawDatePart}`);
+            }
         }
         
         // If not found, try the old selectors as fallback
@@ -92,39 +101,89 @@ async function fetchCancelledLectures() {
         // Extract cancelled lectures
         const cancelledLectures = [];
         
-        // Process the main cancelled lectures section (first p tag after h4)
-        const mainLecturesP = $('article .entry-content h4').next('p');
-        if (mainLecturesP.length > 0) {
-            const mainHtml = mainLecturesP.html();
-            if (mainHtml) {
-                // Split by <br> or <br /> tags to get individual lecture lines
-                const lectureLines = mainHtml.split(/<br\s*\/?>/i);
+        // Process daily cancelled lectures from h5 tags and their p elements
+        const h5Elements = $('article .entry-content h5');
+        h5Elements.each((_, h5Element) => {
+            const $h5 = $(h5Element);
+            
+            // Get text content and HTML content to handle both inline and paragraph formats
+            let content = $h5.html();
+            
+            if (content) {
+                // Split by <p> tags and process each part
+                const parts = content.split(/<\/?p[^>]*>/i);
                 
-                lectureLines.forEach(line => {
-                    // Remove HTML tags and decode entities
-                    const cleanLine = $('<div>').html(line).text().trim();
-                    
-                    if (cleanLine && !cleanLine.includes('UNTIL FURTHER NOTICE')) {
-                        // Parse lines with em dash separator
-                        if (cleanLine.includes('—') || cleanLine.includes('&#8212;')) {
-                            const parts = cleanLine.split(/[—]|&#8212;/).map(part => part.trim());
-                            if (parts.length >= 2) {
-                                const className = parts[0].trim();
-                                const cancelledFor = parts.slice(1).join(' — ').trim();
-                                const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
-                                
-                                if (className && cancelledForList.length > 0) {
-                                    cancelledLectures.push({ 
-                                        className: className, 
-                                        cancelledFor: cancelledForList 
-                                    });
+                parts.forEach(part => {
+                    if (part.trim()) {
+                        const cleanLine = $('<div>').html(part).text().trim();
+                        
+                        if (cleanLine && 
+                            !cleanLine.includes('UNTIL FURTHER NOTICE') && 
+                            cleanLine.length > 5) {
+                            
+                            // Parse lines with em dash separator (&#8212; or —)
+                            const separators = ['—', '&#8212;'];
+                            let found = false;
+                            
+                            for (const separator of separators) {
+                                if (cleanLine.includes(separator)) {
+                                    const lineParts = cleanLine.split(separator).map(item => item.trim());
+                                    if (lineParts.length >= 2) {
+                                        const className = lineParts[0].trim();
+                                        const cancelledFor = lineParts.slice(1).join(' — ').trim();
+                                        const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
+                                        
+                                        if (className && cancelledForList.length > 0) {
+                                            cancelledLectures.push({ 
+                                                className: className, 
+                                                cancelledFor: cancelledForList 
+                                            });
+                                            found = true;
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 });
             }
-        }
+        });
+        
+        // Also check for p elements after h5 (in case structure varies)
+        const pAfterH5 = $('article .entry-content h5').nextAll('p');
+        pAfterH5.each((_, pElement) => {
+            const $p = $(pElement);
+            const cleanLine = $p.text().trim();
+            
+            if (cleanLine && 
+                !cleanLine.includes('UNTIL FURTHER NOTICE') && 
+                cleanLine.length > 5) {
+                
+                const separators = ['—', '&#8212;'];
+                let found = false;
+                
+                for (const separator of separators) {
+                    if (cleanLine.includes(separator)) {
+                        const lineParts = cleanLine.split(separator).map(item => item.trim());
+                        if (lineParts.length >= 2) {
+                            const className = lineParts[0].trim();
+                            const cancelledFor = lineParts.slice(1).join(' — ').trim();
+                            const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
+                            
+                            if (className && cancelledForList.length > 0) {
+                                cancelledLectures.push({ 
+                                    className: className, 
+                                    cancelledFor: cancelledForList 
+                                });
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
         
         // Process the "UNTIL FURTHER NOTICE" section
         const untilNoticeDiv = $('.wp-block-group .wp-block-group__inner-container p');
