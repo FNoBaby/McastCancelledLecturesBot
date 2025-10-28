@@ -80,8 +80,8 @@ async function fetchCancelledLectures() {
             console.log(`No date found in content, using current date: ${rawDatePart}`);
         }
         
-        // Normalize date string (remove non-breaking spaces, collapse whitespace, remove duplicate commas)
-        let datePart = rawDatePart.replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').replace(/,\s*,/g, ',').trim();
+        // Normalize date string (remove non-breaking spaces, collapse whitespace)
+        let datePart = rawDatePart.replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
         if (datePart.includes('Cancelled Lectures for')) {
             datePart = datePart.replace('Cancelled Lectures for', '').trim();
         }
@@ -139,25 +139,45 @@ async function fetchCancelledLectures() {
             return { className, cancelledFor: cancelledForList };
         }
 
+        // Simple uniqueness helper to avoid duplicate pushes
+        function pushIfUnique(arr, item) {
+            const exists = arr.some(existing =>
+                existing?.className === item?.className &&
+                JSON.stringify(existing?.cancelledFor) === JSON.stringify(item?.cancelledFor)
+            );
+            if (!exists) arr.push(item);
+        }
+
         // Extract cancelled lectures
         const cancelledLectures = [];
         
-        // 1) Parse <p><strong>...</strong> blocks where lines are separated by <br/>
-        const pStrongElements = $('article .entry-content > p > strong, article .entry-content p strong');
-        pStrongElements.each((_, elem) => {
+        // --- MAIN LECTURES CAPTURE (updated) ---
+        // Parse the main paragraph <p><strong>...<br/>...</strong></p> lines but exclude the UNTIL FURTHER NOTICE container
+        const mainPStrong = $('article .entry-content > p > strong, article .entry-content p strong')
+            .not('.wp-block-group .wp-block-group__inner-container p strong');
+
+        mainPStrong.each((_, elem) => {
             const $elem = $(elem);
             const innerHtml = $elem.html();
             if (!innerHtml) return;
 
-            // Split on <br> tags (handle variations)
+            // split on any <br> (case-insensitive), but keep global matches
             const lines = innerHtml.split(/<br\s*\/?>/i);
             lines.forEach(rawLine => {
-                const lecture = parseLectureLine(rawLine);
-                if (lecture) {
-                    cancelledLectures.push(lecture);
-                }
+                const cleanLine = $('<div>').html(rawLine).text().trim();
+                if (!cleanLine) return;
+
+                // skip header / asterisks and the UNTIL FURTHER NOTICE marker if present
+                const up = cleanLine.toUpperCase();
+                if (up.includes('UNTIL FURTHER NOTICE') || /^[\*\s]+$/.test(cleanLine)) return;
+
+                // handle a variety of dash representations
+                // prefer to use parseLectureLine which handles normalization and splitting on dashes
+                const lecture = parseLectureLine(cleanLine);
+                if (lecture) pushIfUnique(cancelledLectures, lecture);
             });
         });
+        // --- end main capture ---
 
         // 2) Process daily cancelled lectures from h5 tags and their p elements (existing logic)
         const h5Elements = $('article .entry-content h5');
@@ -180,7 +200,7 @@ async function fetchCancelledLectures() {
                             cleanLine.length > 5) {
                             
                             const lecture = parseLectureLine(cleanLine);
-                            if (lecture) cancelledLectures.push(lecture);
+                            if (lecture) pushIfUnique(cancelledLectures, lecture);
                         }
                     }
                 });
@@ -196,11 +216,11 @@ async function fetchCancelledLectures() {
             const lines = innerHtml.split(/<br\s*\/?>/i);
             lines.forEach(line => {
                 const lecture = parseLectureLine(line);
-                if (lecture) cancelledLectures.push(lecture);
+                if (lecture) pushIfUnique(cancelledLectures, lecture);
             });
         });
         
-        // 3) Process the "UNTIL FURTHER NOTICE" section
+        // 3) Process the "UNTIL FURTHER NOTICE" section (kept as-is)
         const untilNoticeDiv = $('.wp-block-group .wp-block-group__inner-container p');
         untilNoticeDiv.each((_, element) => {
             const $elem = $(element);
@@ -225,10 +245,11 @@ async function fetchCancelledLectures() {
                             const cancelledForList = cancelledFor.split(',').map(item => item.trim()).filter(Boolean);
                             
                             if (className && cancelledForList.length > 0) {
-                                cancelledLectures.push({ 
+                                const item = { 
                                     className: className + ' (Until Further Notice)', 
                                     cancelledFor: cancelledForList 
-                                });
+                                };
+                                pushIfUnique(cancelledLectures, item);
                             }
                         }
                     }
