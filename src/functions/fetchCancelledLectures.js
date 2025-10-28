@@ -80,8 +80,8 @@ async function fetchCancelledLectures() {
             console.log(`No date found in content, using current date: ${rawDatePart}`);
         }
         
-        // Clean up the date part
-        let datePart = rawDatePart;
+        // Normalize date string (remove non-breaking spaces, collapse whitespace, remove duplicate commas)
+        let datePart = rawDatePart.replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').replace(/,\s*,/g, ',').trim();
         if (datePart.includes('Cancelled Lectures for')) {
             datePart = datePart.replace('Cancelled Lectures for', '').trim();
         }
@@ -89,10 +89,25 @@ async function fetchCancelledLectures() {
         const description = `Cancelled Lectures for ${datePart}`;
         console.log(`Parsed description: ${description}`);
 
-        // Parse the date string into a Date object
+        // Parse the date string into a Date object (try multiple formats)
         let parsedDate;
         try {
-            parsedDate = moment.tz(datePart, ['dddd Do MMMM, YYYY', 'dddd Do MMMM YYYY', 'D MMMM YYYY', 'MMMM D, YYYY', 'dddd D MMMM YYYY', 'D MMMM, YYYY'], 'Europe/Amsterdam').toDate();
+            const formats = [
+                'dddd Do MMMM, YYYY',
+                'dddd Do MMMM YYYY',
+                'dddd D MMMM, YYYY',
+                'dddd D MMMM YYYY',
+                'D MMMM YYYY',
+                'D MMMM, YYYY',
+                'MMMM D, YYYY',
+                'MMMM D YYYY'
+            ];
+            parsedDate = moment.tz(datePart, formats, 'Europe/Amsterdam');
+            if (!parsedDate.isValid()) {
+                // try loose parse as fallback
+                parsedDate = moment.tz(datePart, 'Europe/Amsterdam');
+            }
+            parsedDate = parsedDate.toDate();
         } catch (e) {
             console.log(`Error parsing date: ${e.message}, using current date`);
             parsedDate = new Date();
@@ -100,13 +115,19 @@ async function fetchCancelledLectures() {
 
         // Helper to parse a single line like "Class Name  —  Group1, Group2"
         function parseLectureLine(line) {
-            const cleanLine = $('<div>').html(line).text().trim();
-            if (!cleanLine || cleanLine.length <= 5) return null;
-            // Ignore the UNTIL FURTHER NOTICE header lines
-            if (cleanLine.toUpperCase().includes('UNTIL FURTHER NOTICE')) return null;
+            if (!line) return null;
+            // Decode HTML entities and strip surrounding whitespace
+            const decoded = $('<div>').html(line).text().trim();
+            if (!decoded || decoded.length <= 5) return null;
+            // Ignore the UNTIL FURTHER NOTICE header lines or lines containing only asterisks
+            const upper = decoded.toUpperCase();
+            if (upper.includes('UNTIL FURTHER NOTICE') || /^[\*\s]+$/.test(decoded)) return null;
 
-            // Split on em-dash / en-dash / hyphen (after decoding entities)
-            const parts = cleanLine.split(/[—–-]/).map(p => p.trim()).filter(Boolean);
+            // Normalize spaces and NBSP
+            const normal = decoded.replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
+
+            // Split on em-dash / en-dash / hyphen (various forms)
+            const parts = normal.split(/[—–-]/).map(p => p.trim()).filter(Boolean);
             if (parts.length < 2) return null;
 
             const className = parts[0];
@@ -155,7 +176,7 @@ async function fetchCancelledLectures() {
                         const cleanLine = $('<div>').html(part).text().trim();
                         
                         if (cleanLine && 
-                            !cleanLine.includes('UNTIL FURTHER NOTICE') && 
+                            !cleanLine.toUpperCase().includes('UNTIL FURTHER NOTICE') && 
                             cleanLine.length > 5) {
                             
                             const lecture = parseLectureLine(cleanLine);
