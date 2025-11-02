@@ -152,28 +152,45 @@ async function fetchCancelledLectures() {
         const cancelledLectures = [];
         
         // --- MAIN LECTURES CAPTURE (updated) ---
-        // Parse the main paragraph <p><strong>...<br/>...</strong></p> lines but exclude the UNTIL FURTHER NOTICE container
-        const mainPStrong = $('article .entry-content > p > strong, article .entry-content p strong')
-            .not('.wp-block-group .wp-block-group__inner-container p strong');
+        // The page's main cancelled lectures are often in the first <p> directly under .entry-content
+        // (they may not be wrapped in <strong>). Select these paragraph(s) but exclude the
+        // `.wp-block-group__inner-container` which contains the "UNTIL FURTHER NOTICE" block.
+        const mainParagraphs = $('article .entry-content > p').not('.wp-block-group .wp-block-group__inner-container p');
 
-        mainPStrong.each((_, elem) => {
-            const $elem = $(elem);
-            const innerHtml = $elem.html();
+        mainParagraphs.each((_, pElem) => {
+            const $p = $(pElem);
+            const innerHtml = $p.html();
             if (!innerHtml) return;
 
-            // split on any <br> (case-insensitive), but keep global matches
-            const lines = innerHtml.split(/<br\s*\/?>/i);
+            // If the paragraph explicitly contains the UNTIL FURTHER NOTICE marker, skip it
+            const textUpper = $p.text().toUpperCase();
+            if (textUpper.includes('UNTIL FURTHER NOTICE')) return;
+
+            // Split the paragraph by <br> tags (handles multiple forms) and by newlines as fallback
+            const lines = innerHtml.split(/<br\s*\/?>(?!=)|\r?\n/gi);
             lines.forEach(rawLine => {
                 const cleanLine = $('<div>').html(rawLine).text().trim();
                 if (!cleanLine) return;
 
-                // skip header / asterisks and the UNTIL FURTHER NOTICE marker if present
+                // skip header / asterisks and obvious non-lecture lines
                 const up = cleanLine.toUpperCase();
                 if (up.includes('UNTIL FURTHER NOTICE') || /^[\*\s]+$/.test(cleanLine)) return;
 
-                // handle a variety of dash representations
-                // prefer to use parseLectureLine which handles normalization and splitting on dashes
-                const lecture = parseLectureLine(cleanLine);
+                // Try to parse the line into a lecture entry. If parseLectureLine fails,
+                // attempt a fallback splitting on common dash characters.
+                let lecture = parseLectureLine(cleanLine);
+                if (!lecture) {
+                    // fallback: split by dash/em-dash/en-dash
+                    const parts = cleanLine.split(/[—–-]/).map(p => p.trim()).filter(Boolean);
+                    if (parts.length >= 2) {
+                        const className = parts[0];
+                        const cancelledForList = parts.slice(1).join(' — ').split(',').map(i => i.trim()).filter(Boolean);
+                        if (className && cancelledForList.length) {
+                            lecture = { className, cancelledFor: cancelledForList };
+                        }
+                    }
+                }
+
                 if (lecture) pushIfUnique(cancelledLectures, lecture);
             });
         });
