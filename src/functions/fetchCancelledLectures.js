@@ -426,4 +426,4 @@ module.exports = {
 };
 
 // Uncomment this line to test the fetch function directly
-testFetch();
+// testFetch();
