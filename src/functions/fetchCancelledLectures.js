@@ -190,7 +190,7 @@ async function fetchCancelledLectures() {
     // (they may not be wrapped in <strong>). Select these paragraph(s) but exclude the
     // `.wp-block-group__inner-container` which contains the "UNTIL FURTHER NOTICE" block.
     const mainParagraphs = $(
-      "article .entry-content > p , article .entry-content > h4"
+      "article .entry-content > p , article .entry-content > h4 , article .entry-content > ul"
     ).not(".wp-block-group .wp-block-group__inner-container p");
 
     mainParagraphs.each((_, pElem) => {
