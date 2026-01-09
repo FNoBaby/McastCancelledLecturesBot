@@ -340,7 +340,7 @@ async function fetchCancelledLectures() {
       const embed = new EmbedBuilder()
         .setTitle("Cancelled Lectures")
         .setDescription(
-          `${description}\n\nNo cancelled lectures found or unable to parse the page correctly.`
+          `${description}\n\nNo cancelled lectures found`
         )
         .setColor("Red");
 
