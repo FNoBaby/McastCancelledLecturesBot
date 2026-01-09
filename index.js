@@ -10,9 +10,14 @@ const {
 } = require("./src/functions/fetchCancelledLectures");
 const refreshCommand = require("./src/commands/refresh");
 const refreshAllCommand = require("./src/commands/refreshAll");
+const purgeCommand = require("./src/commands/purge");
+const purgeAllCommand = require("./src/commands/purgeAll");
+const registerCommand = require("./src/commands/register");
+const unregisterCommand = require("./src/commands/unregister");
 const {
   setLastMessageId,
   getLastMessageId,
+  findTodaysMessage,
 } = require("./src/functions/sharedState");
 const moment = require("moment-timezone");
 const motivatemeCommand = require("./src/commands/motivateme");
@@ -55,14 +60,9 @@ client.on("ready", async () => {
 
     // Register new global commands
     const newGlobalCommands = [
-      {
-        name: "refresh",
-        description: "Refresh the Cancelled Lectures list",
-      },
-      {
-        name: "motivateme",
-        description: "Get a motivational quote",
-      },
+      refreshCommand.data.toJSON(),
+      motivatemeCommand.data.toJSON(),
+      purgeCommand.data.toJSON(),
     ];
 
     await rest.put(Discord.Routes.applicationCommands(config.clientId), {
@@ -88,10 +88,10 @@ client.on("ready", async () => {
 
       // Register new guild commands
       const newDevCommands = [
-        {
-          name: "refreshall",
-          description: "Refresh the Cancelled Lectures list in all channels",
-        },
+        refreshAllCommand.data.toJSON(),
+        purgeAllCommand.data.toJSON(),
+        registerCommand.data.toJSON(),
+        unregisterCommand.data.toJSON(),
       ];
 
       await rest.put(
@@ -168,11 +168,49 @@ client.on("interactionCreate", async (interaction) => {
       `User "${interaction.user.tag}" ran /refreshall in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
     );
     await refreshAllCommand.execute(interaction);
+  } else if (commandName === "purgeall") {
+    if (interaction.user.id !== config.devId) {
+      return interaction.reply({
+        content: "You do not have permission to use this command.",
+        ephemeral: true,
+      });
+    }
+    console.log(
+      `User "${interaction.user.tag}" ran /purgeall in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
+    );
+    await purgeAllCommand.execute(interaction);
+  } else if (commandName === "register") {
+    if (interaction.user.id !== config.devId) {
+      return interaction.reply({
+        content: "You do not have permission to use this command.",
+        ephemeral: true,
+      });
+    }
+    console.log(
+      `User "${interaction.user.tag}" ran /register in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
+    );
+    await registerCommand.execute(interaction);
+  } else if (commandName === "unregister") {
+    if (interaction.user.id !== config.devId) {
+      return interaction.reply({
+        content: "You do not have permission to use this command.",
+        ephemeral: true,
+      });
+    }
+    console.log(
+      `User "${interaction.user.tag}" ran /unregister in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
+    );
+    await unregisterCommand.execute(interaction);
   } else if (commandName === "motivateme") {
     console.log(
       `User "${interaction.user.tag}" ran /motivateme in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
     );
     await motivatemeCommand.execute(interaction);
+  } else if (commandName === "purge") {
+    console.log(
+      `User "${interaction.user.tag}" ran /purge in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
+    );
+    await purgeCommand.execute(interaction);
   }
 });
 
@@ -203,44 +241,63 @@ async function runCronJob() {
           console.error(`Failed to fetch channel with ID: ${channelId}`);
           continue;
         }
-        const lastMessageId = getLastMessageId(channelId);
-        if (lastMessageId) {
-          const lastMessage = await channel.messages.fetch(lastMessageId);
-          if (lastMessage.embeds[0]?.description === embed.description) {
-            const noNewLecturesEmbed = new Discord.EmbedBuilder()
-              .setTitle("Cancelled Lectures")
-              .setDescription(
-                "**Lectures not published yet. Use /refresh to check again.**"
-              )
-              .setColor("Random")
-              .setFooter({
-                text: `Last Checked: ${new Date().toLocaleString("en-GB", {
-                  timeZone: "Europe/Amsterdam",
-                  dateStyle: "full",
-                  timeStyle: "short",
-                })}`,
-              });
-            await channel.send({ embeds: [noNewLecturesEmbed] });
-            setLastMessageId(channelId, message.id);
-            continue;
-          } else {
+        
+        // Search the channel for today's message from the bot
+        const todaysMessage = await findTodaysMessage(channel, client.user.id);
+        
+        // If we found a message from today, update it instead of sending a new one
+        if (todaysMessage) {
+          try {
+            // Check if content is different before updating
+            if (todaysMessage.embeds[0]?.description === embed.data.description) {
+              console.log(`Message in channel ${channel.name} is already up to date`);
+              continue;
+            }
+            
+            // Update the existing message
+            const now = new Date().toLocaleString("en-US", {
+              timeZone: "Europe/Amsterdam",
+              dateStyle: "full",
+              timeStyle: "short",
+            });
+            embed.setFooter({ text: `Last Refreshed: ${now}` });
+            await todaysMessage.edit({ embeds: [embed] });
+            
             lecturesFound = true;
-            isCronJobRunning = false;
+            setLastMessageId(channelId, todaysMessage.id);
             console.log(
-              "Lectures found. Sending Lectures....in server: ",
-              guild.name,
-              "channel: ",
-              channel.name
+              `Updated existing message from today in server: ${guild.name}, channel: ${channel.name}`
             );
+          } catch (error) {
+            console.error(`Failed to update message in channel ${channelId}:`, error.message);
+            // If we can't update, send a new message
+            lecturesFound = true;
+            const now = new Date().toLocaleString("en-US", {
+              timeZone: "Europe/Amsterdam",
+              dateStyle: "full",
+              timeStyle: "short",
+            });
+            embed.setFooter({ text: `Last Refreshed: ${now}` });
             const message = await channel.send({ embeds: [embed] });
             setLastMessageId(channelId, message.id);
+            console.log(
+              `Sent new message (update failed) in server: ${guild.name}, channel: ${channel.name}`
+            );
           }
         } else {
-          console.log("Last Message ID not found. Sending Lectures....");
+          // No message sent today, send a new one
           lecturesFound = true;
-          isCronJobRunning = false;
+          const now = new Date().toLocaleString("en-US", {
+            timeZone: "Europe/Amsterdam",
+            dateStyle: "full",
+            timeStyle: "short",
+          });
+          embed.setFooter({ text: `Last Refreshed: ${now}` });
           const message = await channel.send({ embeds: [embed] });
           setLastMessageId(channelId, message.id);
+          console.log(
+            `Sent new message in server: ${guild.name}, channel: ${channel.name}`
+          );
         }
       }
     } else {

@@ -1,3 +1,4 @@
+const { SlashCommandBuilder } = require('@discordjs/builders');
 const { EmbedBuilder } = require('discord.js');
 const getMotivationalQuote = require('../functions/getMotivationalQuote');
 const config = require('../../config.json');
@@ -6,8 +7,9 @@ const cooldowns = new Map();
 const cooldownAmount = 10000; // 10 seconds
 
 module.exports = {
-    name: 'motivateme',
-    description: 'Get a motivational quote',
+    data: new SlashCommandBuilder()
+        .setName('motivateme')
+        .setDescription('Get a motivational quote'),
     async execute(interaction) {
         const userId = interaction.user.id;
         const now = Date.now();

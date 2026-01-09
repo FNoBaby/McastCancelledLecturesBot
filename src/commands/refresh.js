@@ -63,82 +63,32 @@ module.exports = {
                 lastMessageId
               );
 
-              if (!currentDateInAmsterdam.isSame(parsedDateInAmsterdam, 'day')) {
-                const noNewLecturesEmbed = new Discord.EmbedBuilder()
-                  .setTitle("Cancelled Lectures")
-                  .setDescription(
-                    "**Lectures not published yet. Use /refresh to check again.**"
-                  )
-                  .setColor("Random")
-                  .setFooter({
-                    text: `Last Checked: ${new Date().toLocaleString("en-GB", {
-                      timeZone: "Europe/Amsterdam",
-                      dateStyle: "full",
-                      timeStyle: "short",
-                    })}`,
-                  });
-
-                await message.edit({ embeds: [noNewLecturesEmbed] });
-                await interaction.reply({
-                  content: "The cancelled lectures embed has been updated.",
-                  ephemeral: true,
-                });
-                return;
-              }
-
+              // Always try to update the message with latest data
               await message.edit({ embeds: [embed] });
               await interaction.reply({
                 content: "The cancelled lectures embed has been updated.",
                 ephemeral: true,
               });
             } catch (fetchError) {
-              console.log(fetchError);
+              // Message was deleted or doesn't exist anymore
+              console.log(`Message not found or deleted: ${fetchError.message}`);
               const message = await interaction.reply({
                 embeds: [embed],
                 fetchReply: true,
               });
               setLastMessageId(interaction.channel.id, message.id);
               await interaction.followUp({
-                content: "The cancelled lectures embed has been sent.",
+                content: "The cancelled lectures embed has been sent (previous message was deleted).",
                 ephemeral: true,
               });
             }
           } else {
-            let message = null;
-            if (!currentDateInAmsterdam.isSame(parsedDateInAmsterdam, 'day')) {
-              const noNewLecturesEmbed = new Discord.EmbedBuilder()
-                .setTitle("Cancelled Lectures")
-                .setDescription(
-                  "**Lectures not published yet. Use /refresh to check again.**"
-                )
-                .setColor("Random")
-                .setFooter({
-                  text: `Last Checked: ${new Date().toLocaleString("en-GB", {
-                    timeZone: "Europe/Amsterdam",
-                    dateStyle: "full",
-                    timeStyle: "short",
-                  })}`,
-                });
-
-              message = await interaction.reply({
-                embeds: [noNewLecturesEmbed],
-                fetchReply: true,
-              });
-            } else {
-              message = await interaction.reply({
-                embeds: [embed],
-                fetchReply: true,
-              });
-            }
-
+            // No previous message found, send a new one
+            const message = await interaction.reply({
+              embeds: [embed],
+              fetchReply: true,
+            });
             setLastMessageId(interaction.channel.id, message.id);
-            console.log(
-              'Successfully refreshed in server "',
-              interaction.guild.name,
-              '"in channel"',
-              interaction.channel.name,
-              '"'
-            );
             await interaction.followUp({
               content: "The cancelled lectures embed has been sent.",
               ephemeral: true,
