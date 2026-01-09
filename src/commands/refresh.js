@@ -39,6 +39,9 @@ module.exports = {
       setTimeout(() => cooldowns.delete(userId), cooldownAmount);
     }
 
+    // Defer the reply to avoid timeout (3 second limit)
+    await interaction.deferReply({ ephemeral: true });
+
     try {      
       const { embed, date } = await fetchCancelledLectures();      // Get the current date in Amsterdam timezone
       const currentDateInAmsterdam = moment.tz("Europe/Amsterdam").startOf("day");
@@ -65,52 +68,44 @@ module.exports = {
 
               // Always try to update the message with latest data
               await message.edit({ embeds: [embed] });
-              await interaction.reply({
+              await interaction.editReply({
                 content: "The cancelled lectures embed has been updated.",
-                ephemeral: true,
               });
             } catch (fetchError) {
               // Message was deleted or doesn't exist anymore
               console.log(`Message not found or deleted: ${fetchError.message}`);
-              const message = await interaction.reply({
+              const message = await interaction.channel.send({
                 embeds: [embed],
-                fetchReply: true,
               });
               setLastMessageId(interaction.channel.id, message.id);
-              await interaction.followUp({
+              await interaction.editReply({
                 content: "The cancelled lectures embed has been sent (previous message was deleted).",
-                ephemeral: true,
               });
             }
           } else {
             // No previous message found, send a new one
-            const message = await interaction.reply({
+            const message = await interaction.channel.send({
               embeds: [embed],
-              fetchReply: true,
             });
             setLastMessageId(interaction.channel.id, message.id);
-            await interaction.followUp({
+            await interaction.editReply({
               content: "The cancelled lectures embed has been sent.",
-              ephemeral: true,
             });
           }
         } else {
-          await interaction.reply({
+          await interaction.editReply({
             content: "This command can only be used in the designated channel.",
-            ephemeral: true,
           });
         }
       } else {
-        await interaction.reply({
+        await interaction.editReply({
           content: "Failed to fetch the latest cancelled lectures.",
-          ephemeral: true,
         });
       }
     } catch (error) {
       console.error("Error executing refresh command:", error);
-      await interaction.reply({
+      await interaction.editReply({
         content: "An error occurred while refreshing the cancelled lectures.",
-        ephemeral: true,
       });
     }
   },
