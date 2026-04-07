@@ -85,18 +85,11 @@ async function fetchCancelledLectures() {
       }
     }
 
-    // If no date found, use current date
+    // If no date was found in source content, keep it unavailable.
+    // Falling back to "today" can incorrectly treat stale data as current.
     if (!rawDatePart) {
-      const currentDate = new Date();
-      rawDatePart = currentDate.toLocaleDateString("en-US", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      });
-      console.log(
-        `No date found in content, using current date: ${rawDatePart}`
-      );
+      rawDatePart = "Date unavailable";
+      console.warn("No date found in content. Date will be treated as unavailable.");
     }
 
     // Normalize date string (remove non-breaking spaces, collapse whitespace)
@@ -108,32 +101,82 @@ async function fetchCancelledLectures() {
       datePart = datePart.replace("Cancelled Lectures for", "").trim();
     }
 
-    const description = `Cancelled Lectures for ${datePart}`;
-    console.log(`Parsed description: ${description}`);
+    // Parse the source date with weekday mismatch tolerance.
+    // If weekday text is wrong (e.g. "Monday 7 April" on a Tuesday),
+    // we still trust the numeric date and normalize the displayed label.
+    let parsedDate = null;
+    let descriptionDatePart = datePart;
+    if (datePart !== "Date unavailable") {
+      try {
+        const weekdayFormats = [
+          "dddd Do MMMM, YYYY",
+          "dddd Do MMMM YYYY",
+          "dddd D MMMM, YYYY",
+          "dddd D MMMM YYYY",
+        ];
+        const dateOnlyFormats = [
+          "Do MMMM, YYYY",
+          "Do MMMM YYYY",
+          "D MMMM, YYYY",
+          "D MMMM YYYY",
+          "MMMM D, YYYY",
+          "MMMM D YYYY",
+        ];
 
-    // Parse the date string into a Date object (try multiple formats)
-    let parsedDate;
-    try {
-      const formats = [
-        "dddd Do MMMM, YYYY",
-        "dddd Do MMMM YYYY",
-        "dddd D MMMM, YYYY",
-        "dddd D MMMM YYYY",
-        "D MMMM YYYY",
-        "D MMMM, YYYY",
-        "MMMM D, YYYY",
-        "MMMM D YYYY",
-      ];
-      parsedDate = moment.tz(datePart, formats, "Europe/Amsterdam");
-      if (!parsedDate.isValid()) {
-        // try loose parse as fallback
-        parsedDate = moment.tz(datePart, "Europe/Amsterdam");
+        const weekdayMatch = datePart.match(
+          /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b,?\s*/i
+        );
+        const dateWithoutWeekday = weekdayMatch
+          ? datePart.replace(weekdayMatch[0], "").trim()
+          : datePart;
+
+        const strictWeekdayMoment = moment.tz(
+          datePart,
+          weekdayFormats,
+          true,
+          "Europe/Amsterdam"
+        );
+        const strictDateOnlyMoment = moment.tz(
+          dateWithoutWeekday,
+          dateOnlyFormats,
+          true,
+          "Europe/Amsterdam"
+        );
+
+        let chosenMoment = null;
+
+        // Prefer numeric date parsing when available.
+        if (strictDateOnlyMoment.isValid()) {
+          chosenMoment = strictDateOnlyMoment;
+          if (weekdayMatch && !strictWeekdayMoment.isValid()) {
+            console.warn(
+              `Weekday/date mismatch detected in source date "${datePart}". Using numeric date "${dateWithoutWeekday}".`
+            );
+          }
+        } else if (strictWeekdayMoment.isValid()) {
+          chosenMoment = strictWeekdayMoment;
+        } else {
+          // Last-resort loose parse while still rejecting invalid values.
+          const looseMoment = moment.tz(datePart, "Europe/Amsterdam");
+          chosenMoment = looseMoment.isValid() ? looseMoment : null;
+        }
+
+        parsedDate = chosenMoment ? chosenMoment.toDate() : null;
+
+        if (parsedDate) {
+          // Canonicalize day label so embeds never display the wrong weekday.
+          descriptionDatePart = moment(parsedDate)
+            .tz("Europe/Amsterdam")
+            .format("dddd Do MMMM YYYY");
+        }
+      } catch (e) {
+        console.log(`Error parsing date: ${e.message}`);
+        parsedDate = null;
       }
-      parsedDate = parsedDate.toDate();
-    } catch (e) {
-      console.log(`Error parsing date: ${e.message}, using current date`);
-      parsedDate = new Date();
     }
+
+    const description = `Cancelled Lectures for ${descriptionDatePart}`;
+    console.log(`Parsed description: ${description}`);
 
     // Helper to parse a single line like "Class Name  —  Group1, Group2"
     function parseLectureLine(line) {

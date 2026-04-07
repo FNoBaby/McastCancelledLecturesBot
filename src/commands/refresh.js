@@ -4,13 +4,39 @@ const {
 } = require("../functions/fetchCancelledLectures");
 const config = require("../../config.json");
 const {
-  getLastMessageId,
+  getChannelState,
   setLastMessageId,
 } = require("../functions/sharedState");
 const moment = require("moment-timezone");
 const Discord = require("discord.js");
 
 const cooldowns = new Map();
+const AMSTERDAM_TZ = "Europe/Amsterdam";
+
+function getTodayDateKey() {
+  return moment.tz(AMSTERDAM_TZ).format("YYYY-MM-DD");
+}
+
+function getDateKey(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return moment(date).tz(AMSTERDAM_TZ).format("YYYY-MM-DD");
+}
+
+function createStatusEmbed(description) {
+  return new Discord.EmbedBuilder()
+    .setTitle("Cancelled Lectures")
+    .setDescription(description)
+    .setColor("Random")
+    .setFooter({
+      text: `Last Checked: ${new Date().toLocaleString("en-GB", {
+        timeZone: AMSTERDAM_TZ,
+        dateStyle: "full",
+        timeStyle: "short",
+      })}`,
+    });
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -39,55 +65,66 @@ module.exports = {
       setTimeout(() => cooldowns.delete(userId), cooldownAmount);
     }
 
-    // Defer the reply to avoid timeout (3 second limit)
     await interaction.deferReply({ ephemeral: true });
 
-    try {      
-      const { embed, date } = await fetchCancelledLectures();      // Get the current date in Amsterdam timezone
-      const currentDateInAmsterdam = moment.tz("Europe/Amsterdam").startOf("day");
-      
-      // Convert the parsed date to Amsterdam timezone for comparison
-      const dateObject = date instanceof Date ? date : new Date();
-      const parsedDateInAmsterdam = moment(dateObject).tz("Europe/Amsterdam").startOf("day");
+    try {
+      const { embed, date, lectures = [] } = await fetchCancelledLectures();
+      const todayDateKey = getTodayDateKey();
+      const parsedDateKey = getDateKey(date);
+      const hasLectures =
+        parsedDateKey === todayDateKey &&
+        Array.isArray(lectures) &&
+        lectures.length > 0;
 
       if (embed) {
         if (config.channelIds.includes(interaction.channel.id)) {
-          const lastMessageId = getLastMessageId(interaction.channel.id);
+          const state = getChannelState(interaction.channel.id);
           const now = new Date().toLocaleString("en-US", {
-            timeZone: "Europe/Amsterdam",
+            timeZone: AMSTERDAM_TZ,
             dateStyle: "full",
             timeStyle: "short",
           });
           embed.setFooter({ text: `Last Refreshed: ${now}` });
-
-          if (lastMessageId) {
-            try {
-              const message = await interaction.channel.messages.fetch(
-                lastMessageId
+          const embedToUse = hasLectures
+            ? embed
+            : createStatusEmbed(
+                "**Lectures not published yet. Use /refresh to check again.**"
               );
+          const canEditToday =
+            state &&
+            state.messageId &&
+            state.dateKey &&
+            state.dateKey === todayDateKey;
 
-              // Always try to update the message with latest data
-              await message.edit({ embeds: [embed] });
+          if (canEditToday) {
+            try {
+              const message = await interaction.channel.messages.fetch(state.messageId);
+              await message.edit({ embeds: [embedToUse] });
               await interaction.editReply({
                 content: "The cancelled lectures embed has been updated.",
               });
             } catch (fetchError) {
-              // Message was deleted or doesn't exist anymore
-              console.log(`Message not found or deleted: ${fetchError.message}`);
+              console.log(fetchError);
               const message = await interaction.channel.send({
-                embeds: [embed],
+                embeds: [embedToUse],
               });
-              setLastMessageId(interaction.channel.id, message.id);
+              setLastMessageId(interaction.channel.id, message.id, todayDateKey);
               await interaction.editReply({
-                content: "The cancelled lectures embed has been sent (previous message was deleted).",
+                content: "The cancelled lectures embed has been sent.",
               });
             }
           } else {
-            // No previous message found, send a new one
             const message = await interaction.channel.send({
-              embeds: [embed],
+              embeds: [embedToUse],
             });
-            setLastMessageId(interaction.channel.id, message.id);
+            setLastMessageId(interaction.channel.id, message.id, todayDateKey);
+            console.log(
+              'Successfully refreshed in server "',
+              interaction.guild.name,
+              '"in channel"',
+              interaction.channel.name,
+              '"'
+            );
             await interaction.editReply({
               content: "The cancelled lectures embed has been sent.",
             });

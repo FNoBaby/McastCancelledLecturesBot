@@ -1,9 +1,36 @@
 const { SlashCommandBuilder } = require("@discordjs/builders");
 const { fetchCancelledLectures } = require("../functions/fetchCancelledLectures");
 const config = require("../../config.json");
-const { getLastMessageId, setLastMessageId } = require("../functions/sharedState");
+const { getChannelState, setLastMessageId } = require("../functions/sharedState");
 const moment = require("moment-timezone");
 const Discord = require("discord.js");
+
+const AMSTERDAM_TZ = "Europe/Amsterdam";
+
+function getTodayDateKey() {
+  return moment.tz(AMSTERDAM_TZ).format("YYYY-MM-DD");
+}
+
+function getDateKey(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return moment(date).tz(AMSTERDAM_TZ).format("YYYY-MM-DD");
+}
+
+function createStatusEmbed(description) {
+  return new Discord.EmbedBuilder()
+    .setTitle("Cancelled Lectures")
+    .setDescription(description)
+    .setColor("Random")
+    .setFooter({
+      text: `Last Checked: ${new Date().toLocaleString("en-GB", {
+        timeZone: AMSTERDAM_TZ,
+        dateStyle: "full",
+        timeStyle: "short",
+      })}`,
+    });
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -21,32 +48,30 @@ module.exports = {
       // Defer the reply since this might take time
       await interaction.deferReply({ ephemeral: true });
 
-      const { embed, date } = await fetchCancelledLectures();
-      if (!embed || !date) {
+      const { embed, date, lectures = [] } = await fetchCancelledLectures();
+      if (!embed) {
         return interaction.editReply({
           content: "Failed to fetch the latest cancelled lectures.",
         });
-      }      const currentDate = moment.tz("Europe/Amsterdam").startOf("day").toDate();
-      // Fix date parsing to match the fetchCancelledLectures.js implementation
-      const parsedDate = date instanceof Date ? date : new Date(); // Use the Date object returned from fetchCancelledLectures
+      }
+
+      const todayDateKey = getTodayDateKey();
+      const parsedDateKey = getDateKey(date);
+      const hasLectures =
+        parsedDateKey === todayDateKey &&
+        Array.isArray(lectures) &&
+        lectures.length > 0;
+
       const now = new Date().toLocaleString("en-US", {
-        timeZone: "Europe/Amsterdam",
+        timeZone: AMSTERDAM_TZ,
         dateStyle: "full",
         timeStyle: "short",
       });
       embed.setFooter({ text: `Last Refreshed: ${now}` });
 
-      const noNewLecturesEmbed = new Discord.EmbedBuilder()
-        .setTitle("Cancelled Lectures")
-        .setDescription("**Lectures not published yet. Use /refresh to check again.**")
-        .setColor("Random")
-        .setFooter({
-          text: `Last Checked: ${new Date().toLocaleString("en-GB", {
-            timeZone: "Europe/Amsterdam",
-            dateStyle: "full",
-            timeStyle: "short",
-          })}`,
-        });
+      const noNewLecturesEmbed = createStatusEmbed(
+        "**Lectures not published yet. Use /refresh to check again.**"
+      );
 
       let successCount = 0;
       let failCount = 0;
@@ -57,21 +82,26 @@ module.exports = {
           const guild = channel.guild;
           console.log(`Refreshing embed in server: "${guild.name}", channel: "${channel.name}"`);
 
-          const lastMessageId = getLastMessageId(channelId);
-          const useEmbed = currentDate.getTime() === parsedDate.getTime() ? embed : noNewLecturesEmbed;
+          const state = getChannelState(channelId);
+          const useEmbed = hasLectures ? embed : noNewLecturesEmbed;
+          const canEditToday =
+            state &&
+            state.messageId &&
+            state.dateKey &&
+            state.dateKey === todayDateKey;
 
-          if (lastMessageId) {
+          if (canEditToday) {
             try {
-              const message = await channel.messages.fetch(lastMessageId);
+              const message = await channel.messages.fetch(state.messageId);
               await message.edit({ embeds: [useEmbed] });
             } catch (fetchError) {
               console.log(`Last message not found in ${channel.name}, sending new one`);
               const message = await channel.send({ embeds: [useEmbed] });
-              setLastMessageId(channelId, message.id);
+              setLastMessageId(channelId, message.id, todayDateKey);
             }
           } else {
             const message = await channel.send({ embeds: [useEmbed] });
-            setLastMessageId(channelId, message.id);
+            setLastMessageId(channelId, message.id, todayDateKey);
           }
           successCount++;
         } catch (channelError) {
