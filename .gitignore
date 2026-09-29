@@ -34,3 +34,5 @@ config.json
 
 # HTML
 *.html
+# Runtime state
+shared_state.json

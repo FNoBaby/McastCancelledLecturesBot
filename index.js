@@ -20,6 +20,8 @@ const {
 } = require("./src/functions/sharedState");
 const moment = require("moment-timezone");
 const motivatemeCommand = require("./src/commands/motivateme");
+const timetableCommand = require("./src/commands/timetable");
+const { syncTimetableMessages } = require("./src/functions/timetableManager");
 
 const client = new Discord.Client({
   intents: [
@@ -62,6 +64,7 @@ client.on("ready", async () => {
       refreshCommand.data.toJSON(),
       motivatemeCommand.data.toJSON(),
       purgeCommand.data.toJSON(),
+      timetableCommand.data.toJSON(),
     ];
 
     await rest.put(Discord.Routes.applicationCommands(config.clientId), {
@@ -107,6 +110,10 @@ client.on("ready", async () => {
     console.error("Error registering application commands:", error);
   }
 
+  // Post/refresh the shared timetable embeds on startup, then check for a new PDF every 30 minutes.
+  syncTimetableMessages(client);
+  cron.schedule("7,37 * * * *", () => syncTimetableMessages(client));
+
   //Test Cron Jobs
   // cron.schedule("53-59 8 * * 1-5", async () => {
   //   // Runs every minute from 7:30 AM to 7:59 AM (Mon-Fri)
@@ -139,6 +146,12 @@ client.on("ready", async () => {
 });
 
 client.on("interactionCreate", async (interaction) => {
+  if (interaction.isAutocomplete()) {
+    if (interaction.commandName === "timetable") {
+      await timetableCommand.autocomplete(interaction);
+    }
+    return;
+  }
   if (!interaction.isCommand()) return;
 
   if (isCronJobRunning) {
@@ -205,6 +218,11 @@ client.on("interactionCreate", async (interaction) => {
       `User "${interaction.user.tag}" ran /motivateme in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
     );
     await motivatemeCommand.execute(interaction);
+  } else if (commandName === "timetable") {
+    console.log(
+      `User "${interaction.user.tag}" ran /timetable in server "${interaction.guild?.name}" in channel "#${interaction.channel?.name}"`
+    );
+    await timetableCommand.execute(interaction);
   } else if (commandName === "purge") {
     console.log(
       `User "${interaction.user.tag}" ran /purge in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`

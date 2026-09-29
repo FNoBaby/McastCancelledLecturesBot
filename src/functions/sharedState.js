@@ -1,6 +1,29 @@
 const moment = require("moment-timezone");
+const fs = require("fs");
+const path = require("path");
 
-const channelState = {};
+const STATE_FILE = path.join(__dirname, "../../shared_state.json");
+
+function loadState() {
+    try {
+        return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    } catch (error) {
+        if (error.code !== "ENOENT") {
+            console.warn("Could not read shared_state.json, starting empty:", error.message);
+        }
+        return {};
+    }
+}
+
+function saveState() {
+    try {
+        fs.writeFileSync(STATE_FILE, JSON.stringify(channelState, null, 2), "utf8");
+    } catch (error) {
+        console.error("Could not write shared_state.json:", error);
+    }
+}
+
+const channelState = loadState();
 
 function getChannelState(channelId) {
     return channelState[channelId] || null;
@@ -12,6 +35,7 @@ function setChannelState(channelId, state) {
         ...currentState,
         ...state,
     };
+    saveState();
 }
 
 module.exports = {
