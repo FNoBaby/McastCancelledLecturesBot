@@ -1,6 +1,6 @@
 const { SlashCommandBuilder } = require("@discordjs/builders");
 const config = require("../../config.json");
-const { findTodaysMessage } = require("../functions/sharedState");
+const { findTodaysMessage, getChannelState } = require("../functions/sharedState");
 const moment = require("moment-timezone");
 
 module.exports = {
@@ -32,8 +32,15 @@ module.exports = {
             continue;
           }
 
-          // Find today's message in this channel
-          const todaysMessage = await findTodaysMessage(channel, interaction.client.user.id);
+          // Prefer the tracked persistent message; fall back to scanning for today's.
+          const tracked = getChannelState(channelId)?.messageId;
+          let todaysMessage = null;
+          if (tracked) {
+            todaysMessage = await channel.messages.fetch(tracked).catch(() => null);
+          }
+          if (!todaysMessage) {
+            todaysMessage = await findTodaysMessage(channel, interaction.client.user.id);
+          }
 
           if (todaysMessage) {
             await todaysMessage.delete();

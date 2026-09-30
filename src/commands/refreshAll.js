@@ -84,16 +84,13 @@ module.exports = {
 
           const state = getChannelState(channelId);
           const useEmbed = hasLectures ? embed : noNewLecturesEmbed;
-          const canEditToday =
-            state &&
-            state.messageId &&
-            state.dateKey &&
-            state.dateKey === todayDateKey;
+          const canEditToday = Boolean(state && state.messageId);
 
           if (canEditToday) {
             try {
               const message = await channel.messages.fetch(state.messageId);
               await message.edit({ embeds: [useEmbed] });
+              setLastMessageId(channelId, message.id, todayDateKey);
             } catch (fetchError) {
               console.log(`Last message not found in ${channel.name}, sending new one`);
               const message = await channel.send({ embeds: [useEmbed] });

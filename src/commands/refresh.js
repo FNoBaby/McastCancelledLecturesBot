@@ -90,16 +90,13 @@ module.exports = {
             : createStatusEmbed(
                 "**Lectures not published yet. Use /refresh to check again.**"
               );
-          const canEditToday =
-            state &&
-            state.messageId &&
-            state.dateKey &&
-            state.dateKey === todayDateKey;
+          const canEditToday = Boolean(state && state.messageId);
 
           if (canEditToday) {
             try {
               const message = await interaction.channel.messages.fetch(state.messageId);
               await message.edit({ embeds: [embedToUse] });
+              setLastMessageId(interaction.channel.id, message.id, todayDateKey);
               await interaction.editReply({
                 content: "The cancelled lectures embed has been updated.",
               });

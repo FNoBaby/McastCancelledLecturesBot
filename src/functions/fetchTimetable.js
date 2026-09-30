@@ -210,24 +210,48 @@ async function getClassList() {
   return (await getTimetables()).classes;
 }
 
-function buildTimetableEmbed(className, days, meta = {}) {
-  const embed = new EmbedBuilder()
-    .setTitle(`Timetable — ${className}`)
-    .setColor("Blue");
-  if (meta.url) embed.setURL(meta.url);
+// Stable per-class color so stacked class embeds are visually distinct.
+const CLASS_COLORS = [0x5865f2, 0x57f287, 0xfee75c, 0xeb459e, 0xed4245, 0x3498db];
+function classColor(className) {
+  let h = 0;
+  for (const c of className) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return CLASS_COLORS[h % CLASS_COLORS.length];
+}
 
-  for (const day of DAYS) {
+function buildTimetableEmbed(className, days, meta = {}) {
+  const total = DAYS.reduce((n, d) => n + (days?.[d]?.length || 0), 0);
+  const today = new Date().toLocaleDateString("en-GB", {
+    weekday: "long",
+    timeZone: "Europe/Malta",
+  });
+
+  // Day headings use markdown "##" for a larger size, so everything lives in the
+  // description (4096 chars) instead of fields (which can't be resized).
+  const sections = DAYS.map((day) => {
     const lessons = days?.[day] || [];
-    const value = lessons.length
+    const isToday = day === today;
+    const body = lessons.length
       ? lessons
           .map(
             (l) =>
-              `• **${l.start}–${l.end}** ${l.module}${l.room ? ` — ${l.room}` : ""}`
+              `🕒 \`${l.start}–${l.end}\`  **${l.module}**` +
+              (l.room ? `\n　📍 ${l.room}` : "")
           )
-          .join("\n")
-      : "• No lessons";
-    embed.addFields({ name: day, value: value.slice(0, 1024), inline: false });
-  }
+          .join("\n\n")
+      : "*No lessons* 🎉";
+    return `## ${isToday ? "🔹" : "▫️"} ${day}${isToday ? " (today)" : ""}\n${body}`;
+  });
+
+  const summary =
+    `**${total}** lesson${total === 1 ? "" : "s"} this week` +
+    (DAYS.includes(today) ? ` • Today: **${today}**` : "");
+
+  const embed = new EmbedBuilder()
+    .setTitle(`📅 Timetable — ${className}`)
+    .setDescription(`${summary}\n\n${sections.join("\n\n")}`.slice(0, 4096))
+    .setColor(classColor(className))
+    .setTimestamp();
+  if (meta.url) embed.setURL(meta.url);
   if (meta.createdOn) embed.setFooter({ text: meta.createdOn });
   return embed;
 }

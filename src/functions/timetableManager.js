@@ -9,13 +9,25 @@ const { getChannelState, setChannelState } = require("./sharedState");
 
 let syncing = null;
 
-// Classes to monitor come from config.timetableClasses (e.g. ["SWD-6.1B", "SWD-6.2B"]).
-function getSharedClasses() {
-  return config.timetableClasses || DEFAULT_CLASSES;
+// Which classes go to which channel. Preferred config:
+//   "timetableChannels": { "CHANNEL_ID": ["SWD-6.1B"], "OTHER_ID": ["SWD-6.2B"] }
+// Fallback (legacy): every class in timetableClasses goes to every timetableChannelIds channel.
+function getTimetableTargets() {
+  if (config.timetableChannels && typeof config.timetableChannels === "object") {
+    return Object.entries(config.timetableChannels).map(([channelId, classes]) => ({
+      channelId,
+      classes: Array.isArray(classes) ? classes : [classes],
+    }));
+  }
+  const classes = config.timetableClasses || DEFAULT_CLASSES;
+  return (config.timetableChannelIds || config.channelIds || []).map((channelId) => ({
+    channelId,
+    classes,
+  }));
 }
 
-function getTimetableChannelIds() {
-  return config.timetableChannelIds || config.channelIds || [];
+function getSharedClasses() {
+  return [...new Set(getTimetableTargets().flatMap((t) => t.classes))];
 }
 
 // The PDF headers use an "IT-" prefix (IT-SWD-6.1B); accept config values with or without it.
@@ -32,6 +44,10 @@ async function syncTimetableMessages(client, { force = false } = {}) {
   syncing = (async () => {
     try {
       const data = await getTimetables();
+      // Must match the timezone buildTimetableEmbed uses for "today".
+      const todayKey = new Date().toLocaleDateString("en-CA", {
+        timeZone: "Europe/Malta",
+      });
 
       for (const configured of getSharedClasses()) {
         const className = resolveClassName(configured, data.timetables);
@@ -42,10 +58,12 @@ async function syncTimetableMessages(client, { force = false } = {}) {
         const embed = buildTimetableEmbed(className, data.timetables[className], data);
         const classHash = crypto
           .createHash("sha256")
-          .update(JSON.stringify(data.timetables[className]))
+          // Include today's date so the "(today)" marker moves at midnight.
+          .update(JSON.stringify(data.timetables[className]) + todayKey)
           .digest("hex");
 
-        for (const channelId of getTimetableChannelIds()) {
+        for (const { channelId, classes } of getTimetableTargets()) {
+          if (!classes.includes(configured)) continue;
           const key = `timetable:${channelId}:${className}`;
           const state = getChannelState(key) || {};
           try {

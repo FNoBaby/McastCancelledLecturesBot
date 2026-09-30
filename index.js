@@ -263,17 +263,17 @@ function createStatusEmbed(description) {
 
 async function upsertDailyEmbed(channel, channelId, dateKey, embed) {
   const state = getChannelState(channelId);
-  const canEditToday =
-    state && state.messageId && state.dateKey && state.dateKey === dateKey;
 
-  if (canEditToday) {
+  // One persistent message per channel: always edit it, only send if missing.
+  if (state && state.messageId) {
     try {
       const lastMessage = await channel.messages.fetch(state.messageId);
       await lastMessage.edit({ embeds: [embed] });
+      setLastMessageId(channelId, lastMessage.id, dateKey);
       return lastMessage;
     } catch (error) {
       console.warn(
-        `Previous daily message missing in channel ${channelId}. Sending a new one.`
+        `Tracked message missing in channel ${channelId}. Sending a new one.`
       );
     }
   }
@@ -375,10 +375,7 @@ async function refreshEmbedEvery5Minutes() {
       }
 
       const state = getChannelState(channelId);
-      if (!state || !state.messageId || state.dateKey !== todayDateKey) {
-        // Never edit a previous day's post during auto-refresh.
-        continue;
-      }
+      if (!state || !state.messageId) continue;
 
       let lastMessage;
       try {

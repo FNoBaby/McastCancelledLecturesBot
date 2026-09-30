@@ -4,6 +4,8 @@
   "devId": "YOUR_DISCORD_USER_ID",
   "devGuildId": "OPTIONAL_DEV_SERVER_ID_FOR_DEV_ONLY_COMMANDS",
   "channelIds": ["CANCELLED_LECTURES_CHANNEL_ID"],
-  "timetableChannelIds": ["TIMETABLE_CHANNEL_ID"],
-  "timetableClasses": ["SWD-6.1B", "SWD-6.2B"]
+  "timetableChannels": {
+    "TIMETABLE_CHANNEL_ID_1": ["SWD-6.1B"],
+    "TIMETABLE_CHANNEL_ID_2": ["SWD-6.2B"]
+  }
 }
