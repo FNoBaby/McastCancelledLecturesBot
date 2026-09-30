@@ -148,7 +148,22 @@ async function parsePage(page, OPS) {
 }
 
 async function parseTimetablePdf(buffer) {
-  const pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
+  // pdfjs warns about missing optional `canvas` (only needed for rendering)
+  // (pdfjs prints these via console.log, so mute both)
+  const origWarn = console.warn;
+  const origLog = console.log;
+  const quiet = (orig) => (...a) => {
+    if (!String(a[0]).includes("Cannot polyfill")) orig(...a);
+  };
+  console.warn = quiet(origWarn);
+  console.log = quiet(origLog);
+  let pdfjs;
+  try {
+    pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
+  } finally {
+    console.warn = origWarn;
+    console.log = origLog;
+  }
   const doc = await pdfjs.getDocument({
     data: new Uint8Array(buffer),
     verbosity: 0,
