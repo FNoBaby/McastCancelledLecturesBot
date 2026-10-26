@@ -1,6 +1,8 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const { EmbedBuilder } = require("discord.js");
 
 const BASE_URL = "https://iict.mcast.edu.mt";
@@ -8,6 +10,53 @@ const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const DEFAULT_CLASSES = ["IT-SWD-6.1B", "IT-SWD-6.2B"];
 
 let cache = null; // { url, hash, createdOn, classes, timetables }
+
+// Last downloaded PDF, kept on disk so a restart while the site is down can still parse it.
+const SAVED_PDF = path.join(__dirname, "../../timetable_cache.pdf");
+const SAVED_META = path.join(__dirname, "../../timetable_cache.json");
+
+function savePdf(buffer, url) {
+  try {
+    fs.writeFileSync(SAVED_PDF, buffer);
+    fs.writeFileSync(SAVED_META, JSON.stringify({ url, savedAt: new Date().toISOString() }));
+  } catch (error) {
+    console.error("Could not save the timetable PDF:", error);
+  }
+}
+
+async function loadSavedPdf() {
+  let buffer;
+  try {
+    buffer = fs.readFileSync(SAVED_PDF);
+  } catch (error) {
+    return null;
+  }
+  let url = null;
+  try {
+    url = JSON.parse(fs.readFileSync(SAVED_META, "utf8")).url;
+  } catch (error) {
+    // url is only used as the embed link
+  }
+  try {
+    return await buildCache(buffer, url);
+  } catch (error) {
+    console.error("Could not parse the saved timetable PDF:", error);
+    return null;
+  }
+}
+
+async function buildCache(buffer, url) {
+  const hash = crypto.createHash("sha256").update(buffer).digest("hex");
+  const { timetables, createdOn } = await parseTimetablePdf(buffer);
+  cache = {
+    url,
+    hash,
+    createdOn,
+    timetables,
+    classes: Object.keys(timetables).sort(),
+  };
+  return cache;
+}
 
 // The menu item id changes between WordPress rebuilds, so match on the link text.
 async function findTimetableUrl() {
@@ -181,7 +230,7 @@ async function parseTimetablePdf(buffer) {
 }
 
 // Fetches the current timetable PDF. Returns cached data unless the PDF changed.
-// If the site is down, falls back to whatever is cached (marked `stale`).
+// If the site is down, falls back to the cache or the saved PDF (marked `stale`).
 async function getTimetables() {
   let url, buffer;
   try {
@@ -193,20 +242,17 @@ async function getTimetables() {
     });
     buffer = Buffer.from(data);
   } catch (error) {
-    if (cache) return { ...cache, changed: false, stale: true };
+    if (cache || (await loadSavedPdf())) {
+      console.warn(`Timetable site unreachable (${error.message}); using the saved timetable.`);
+      return { ...cache, changed: false, stale: true };
+    }
     throw error;
   }
   const hash = crypto.createHash("sha256").update(buffer).digest("hex");
   if (cache && cache.hash === hash) return { ...cache, changed: false };
 
-  const { timetables, createdOn } = await parseTimetablePdf(buffer);
-  cache = {
-    url,
-    hash,
-    createdOn,
-    timetables,
-    classes: Object.keys(timetables).sort(),
-  };
+  await buildCache(buffer, url);
+  savePdf(buffer, url);
   return { ...cache, changed: true };
 }
 

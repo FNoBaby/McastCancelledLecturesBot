@@ -7,6 +7,7 @@ const config = require("./config.json");
 const {
   fetchCancelledLectures,
   resetCancelledLecturesArray,
+  setEmbedFallback,
 } = require("./src/functions/fetchCancelledLectures");
 const refreshCommand = require("./src/commands/refresh");
 const refreshAllCommand = require("./src/commands/refreshAll");
@@ -109,6 +110,22 @@ client.on("ready", async () => {
   } catch (error) {
     console.error("Error registering application commands:", error);
   }
+
+  // If the IICT site is down, fall back to the cancelled lectures we already posted.
+  setEmbedFallback(async () => {
+    for (const channelId of config.channelIds) {
+      const messageId = getChannelState(channelId)?.messageId;
+      if (!messageId) continue;
+      try {
+        const channel = await client.channels.fetch(channelId);
+        const message = await channel.messages.fetch(messageId);
+        if (message.embeds[0]) return message.embeds[0];
+      } catch (error) {
+        // message or channel gone; try the next one
+      }
+    }
+    return null;
+  });
 
   // Post/refresh the shared timetable embeds on startup, then check for a new PDF every 30 minutes.
   syncTimetableMessages(client);
