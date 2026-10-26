@@ -1,11 +1,11 @@
 const { SlashCommandBuilder } = require("@discordjs/builders");
 const config = require("../../config.json");
+const { getClassList, buildTimetableEmbed } = require("../functions/fetchTimetable");
 const {
-  getTimetables,
-  getClassList,
-  buildTimetableEmbed,
-} = require("../functions/fetchTimetable");
-const { syncTimetableMessages } = require("../functions/timetableManager");
+  syncTimetableMessages,
+  getTimetablesWithFallback,
+  restoreFromMessages,
+} = require("../functions/timetableManager");
 
 const cooldowns = new Map();
 const COOLDOWN_MS = 10 * 1000;
@@ -25,7 +25,9 @@ module.exports = {
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused().toLowerCase();
     try {
-      const classes = await getClassList();
+      const classes = await getClassList().catch(
+        async () => (await restoreFromMessages(interaction.client))?.classes || []
+      );
       await interaction.respond(
         classes
           .filter((c) => c.toLowerCase().includes(focused))
@@ -56,7 +58,7 @@ module.exports = {
 
     try {
       const className = interaction.options.getString("class");
-      const data = await getTimetables();
+      const data = await getTimetablesWithFallback(interaction.client);
       const days = data.timetables[className];
       if (!days) {
         return interaction.editReply({
