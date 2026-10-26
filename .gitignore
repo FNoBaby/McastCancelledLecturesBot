@@ -36,3 +36,6 @@ config.json
 *.html
 # Runtime state
 shared_state.json
+# Last downloaded timetable PDF (offline fallback)
+timetable_cache.pdf
+timetable_cache.json

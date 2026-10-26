@@ -5,6 +5,79 @@ const moment = require("moment-timezone");
 
 let lastFetchedLectures = [];
 let lastFetchedDate = "";
+let lastGoodResult = null; // { description, date, lectures } from the last successful fetch
+let embedFallback = null; // async () => a previously posted Cancelled Lectures embed
+
+const DESCRIPTION_PREFIX = "Cancelled Lectures for ";
+const STALE_NOTE =
+  "⚠️ *The IICT site is unreachable, showing the last known list.*";
+
+function buildLecturesEmbed(description, lectures, stale = false) {
+  const embed = new EmbedBuilder()
+    .setTitle("Cancelled Lectures")
+    .setDescription(stale ? `${description}\n\n${STALE_NOTE}` : description)
+    .setColor("Random");
+  lectures.forEach((lecture) => {
+    if (lecture?.className && lecture?.cancelledFor) {
+      embed.addFields({
+        name: lecture.className,
+        value: Array.isArray(lecture.cancelledFor)
+          ? lecture.cancelledFor.join(", ")
+          : lecture.cancelledFor.toString(),
+        inline: false,
+      });
+    }
+  });
+  return embed;
+}
+
+// Inverse of buildLecturesEmbed: recovers { description, date, lectures } from a
+// posted embed. Status embeds ("not published yet") have no date line and give null.
+function parseLecturesEmbed(embed) {
+  const description = embed?.description?.split("\n")[0] || "";
+  if (!description.startsWith(DESCRIPTION_PREFIX) || !embed.fields?.length) {
+    return null;
+  }
+  const date = moment.tz(
+    description.slice(DESCRIPTION_PREFIX.length),
+    "dddd Do MMMM YYYY",
+    true,
+    "Europe/Amsterdam"
+  );
+  if (!date.isValid()) return null;
+  return {
+    description,
+    date: date.toDate(),
+    lectures: embed.fields.map((f) => ({
+      className: f.name,
+      cancelledFor: f.value.split(",").map((i) => i.trim()).filter(Boolean),
+    })),
+  };
+}
+
+// Registers where to find the last posted embed (needs the Discord client).
+function setEmbedFallback(loader) {
+  embedFallback = loader;
+}
+
+// Used when the site is down: the last successful fetch, else the posted embed.
+async function getFallbackResult() {
+  if (!lastGoodResult && embedFallback) {
+    try {
+      lastGoodResult = parseLecturesEmbed(await embedFallback());
+    } catch (error) {
+      console.error("Could not read the posted cancelled lectures embed:", error);
+    }
+  }
+  if (!lastGoodResult) return null;
+  const { description, date, lectures } = lastGoodResult;
+  return {
+    embed: buildLecturesEmbed(description, lectures, true),
+    date,
+    lectures,
+    stale: true,
+  };
+}
 
 async function fetchCancelledLectures() {
   try {
@@ -406,31 +479,23 @@ async function fetchCancelledLectures() {
     lastFetchedLectures = [...lastFetchedLectures, ...newLectures];
     lastFetchedDate = parsedDate;
 
-    // Build the embed
-    const embed = new EmbedBuilder()
-      .setTitle("Cancelled Lectures")
-      .setDescription(description)
-      .setColor("Random");
-
-    // Ensure the embed is not empty
-    if (cancelledLectures.length > 0) {
-      cancelledLectures.forEach((lecture) => {
-        if (lecture?.className && lecture?.cancelledFor) {
-          embed.addFields({
-            name: lecture.className,
-            value: Array.isArray(lecture.cancelledFor)
-              ? lecture.cancelledFor.join(", ")
-              : lecture.cancelledFor.toString(),
-            inline: false,
-          });
-        }
-      });
+    const embed = buildLecturesEmbed(description, cancelledLectures);
+    if (parsedDate) {
+      lastGoodResult = { description, date: parsedDate, lectures: cancelledLectures };
     }
 
     // Return the embed and the date
     return { embed, date: parsedDate, lectures: cancelledLectures };
   } catch (error) {
     console.error("Error fetching cancelled lectures:", error);
+
+    const fallback = await getFallbackResult();
+    if (fallback) {
+      console.warn(
+        `Cancelled lectures site unreachable (${error.message}); using the last known list.`
+      );
+      return fallback;
+    }
 
     // Create an error embed
     const errorEmbed = new EmbedBuilder()
@@ -465,6 +530,8 @@ async function testFetch() {
 module.exports = {
   fetchCancelledLectures,
   resetCancelledLecturesArray,
+  setEmbedFallback,
+  parseLecturesEmbed,
   testFetch,
 };
 
