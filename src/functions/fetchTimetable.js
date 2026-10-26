@@ -181,15 +181,21 @@ async function parseTimetablePdf(buffer) {
 }
 
 // Fetches the current timetable PDF. Returns cached data unless the PDF changed.
+// If the site is down, falls back to whatever is cached (marked `stale`).
 async function getTimetables() {
-  const url = await findTimetableUrl();
-  if (!url) throw new Error('No "Timetable" link found on the IICT site.');
-
-  const { data } = await axios.get(url, {
-    responseType: "arraybuffer",
-    timeout: 60000,
-  });
-  const buffer = Buffer.from(data);
+  let url, buffer;
+  try {
+    url = await findTimetableUrl();
+    if (!url) throw new Error('No "Timetable" link found on the IICT site.');
+    const { data } = await axios.get(url, {
+      responseType: "arraybuffer",
+      timeout: 60000,
+    });
+    buffer = Buffer.from(data);
+  } catch (error) {
+    if (cache) return { ...cache, changed: false, stale: true };
+    throw error;
+  }
   const hash = crypto.createHash("sha256").update(buffer).digest("hex");
   if (cache && cache.hash === hash) return { ...cache, changed: false };
 
@@ -202,6 +208,53 @@ async function getTimetables() {
     classes: Object.keys(timetables).sort(),
   };
   return { ...cache, changed: true };
+}
+
+// Inverse of buildTimetableEmbed: recovers { className, days, url, createdOn }
+// from a posted embed, so the bot can keep working while the site is down.
+// Module codes aren't shown in the embed, so they come back empty.
+function parseTimetableEmbed(embed) {
+  const className = embed?.title?.match(/Timetable — (.+)$/)?.[1];
+  if (!className || !embed.description) return null;
+
+  const days = {};
+  const headings = [...embed.description.matchAll(/^## \S+ (\w+)(?: \(today\))?$/gm)];
+  headings.forEach((h, i) => {
+    const day = h[1];
+    if (!DAYS.includes(day)) return;
+    const body = embed.description.slice(
+      h.index + h[0].length,
+      headings[i + 1]?.index ?? embed.description.length
+    );
+    const lessons = [
+      ...body.matchAll(/🕒 `(\d{2}:\d{2})–(\d{2}:\d{2})` {2}\*\*(.+)\*\*$(?:\n　📍 (.+))?/gm),
+    ].map((m) => ({ start: m[1], end: m[2], code: "", module: m[3], room: m[4] || "" }));
+    if (lessons.length) days[day] = lessons;
+  });
+
+  return {
+    className,
+    days,
+    url: embed.url || null,
+    createdOn: embed.footer?.text || null,
+  };
+}
+
+// Seeds the cache from parsed embeds. hash stays null so the next successful
+// download is always treated as a change and re-parsed.
+function seedCacheFromEmbeds(parsed) {
+  if (cache) return { ...cache, changed: false, stale: true };
+  if (parsed.length === 0) return null;
+  const timetables = {};
+  for (const p of parsed) timetables[p.className] = p.days;
+  cache = {
+    url: parsed.find((p) => p.url)?.url || null,
+    hash: null,
+    createdOn: parsed.find((p) => p.createdOn)?.createdOn || null,
+    timetables,
+    classes: Object.keys(timetables).sort(),
+  };
+  return { ...cache, changed: false, stale: true };
 }
 
 // Class list for autocomplete; only hits the network if nothing is cached yet.
@@ -264,4 +317,6 @@ module.exports = {
   getTimetables,
   getClassList,
   buildTimetableEmbed,
+  parseTimetableEmbed,
+  seedCacheFromEmbeds,
 };
