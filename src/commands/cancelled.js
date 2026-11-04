@@ -445,8 +445,12 @@ module.exports = {
   },
 
   // The modal's selection becomes that week's set of cancellations for the class.
+  // If the modal was opened from a message (week dropdown, Edit this week), that
+  // message is updated in place; from /cancelled class:X there is none, so we reply.
   async handleModal(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    const fromMessage = interaction.isFromMessage();
+    if (fromMessage) await interaction.deferUpdate();
+    else await interaction.deferReply({ ephemeral: true });
     try {
       if (!canUse(interaction)) {
         return interaction.editReply({ content: "❌ You don't have permission to do that." });
@@ -487,12 +491,18 @@ module.exports = {
         ...added.map((l) => `✅ ${l}`),
         ...removed.map((l) => `🗑️ ${l}`),
       ];
+      const result =
+        `**${className}** — ${weekLabel(week)}\n${lines.length ? lines.join("\n") : "No changes."}` +
+        (added.length && offered.some((s) => s.date > nextSchoolDayKey())
+          ? "\n*Cancelled Lectures shows each one from the day before.*"
+          : "");
+
+      if (!fromMessage) return interaction.editReply({ content: result });
+      // Keep a fresh week dropdown under the result so another week can be picked.
+      const weeks = await weekSelectMessage(interaction, className);
       await interaction.editReply({
-        content:
-          `**${className}** — ${weekLabel(week)}\n${lines.length ? lines.join("\n") : "No changes."}` +
-          (added.length && offered.some((s) => s.date > nextSchoolDayKey())
-            ? "\n*Cancelled Lectures shows each one from the day before.*"
-            : ""),
+        content: `${result}\n\nPick another week, or dismiss this message.`,
+        components: weeks.components,
       });
     } catch (error) {
       console.error("Error saving cancelled lectures:", error);
