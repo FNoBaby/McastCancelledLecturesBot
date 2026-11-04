@@ -22,6 +22,8 @@ const {
 const moment = require("moment-timezone");
 const motivatemeCommand = require("./src/commands/motivateme");
 const timetableCommand = require("./src/commands/timetable");
+const cancelledCommand = require("./src/commands/cancelled");
+const { withManualEntries } = require("./src/functions/manualCancellations");
 const { syncTimetableMessages } = require("./src/functions/timetableManager");
 
 const client = new Discord.Client({
@@ -66,6 +68,7 @@ client.on("ready", async () => {
       motivatemeCommand.data.toJSON(),
       purgeCommand.data.toJSON(),
       timetableCommand.data.toJSON(),
+      cancelledCommand.data.toJSON(),
     ];
 
     await rest.put(Discord.Routes.applicationCommands(config.clientId), {
@@ -166,6 +169,8 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isAutocomplete()) {
     if (interaction.commandName === "timetable") {
       await timetableCommand.autocomplete(interaction);
+    } else if (interaction.commandName === "cancelled") {
+      await cancelledCommand.autocomplete(interaction);
     }
     return;
   }
@@ -240,6 +245,11 @@ client.on("interactionCreate", async (interaction) => {
       `User "${interaction.user.tag}" ran /timetable in server "${interaction.guild?.name}" in channel "#${interaction.channel?.name}"`
     );
     await timetableCommand.execute(interaction);
+  } else if (commandName === "cancelled") {
+    console.log(
+      `User "${interaction.user.tag}" ran /cancelled in server "${interaction.guild?.name}" in channel "#${interaction.channel?.name}"`
+    );
+    await cancelledCommand.execute(interaction);
   } else if (commandName === "purge") {
     console.log(
       `User "${interaction.user.tag}" ran /purge in server "${interaction.guild.name}" in channel "#${interaction.channel.name}"`
@@ -278,8 +288,9 @@ function createStatusEmbed(description) {
     });
 }
 
-async function upsertDailyEmbed(channel, channelId, dateKey, embed) {
+async function upsertDailyEmbed(channel, channelId, dateKey, baseEmbed) {
   const state = getChannelState(channelId);
+  const embed = withManualEntries(baseEmbed, channel.guildId);
 
   // One persistent message per channel: always edit it, only send if missing.
   if (state && state.messageId) {
@@ -408,7 +419,9 @@ async function refreshEmbedEvery5Minutes() {
         const noNewLecturesEmbed = createStatusEmbed(
           "**Lectures not published yet. Use /refresh to check again.**"
         );
-        await lastMessage.edit({ embeds: [noNewLecturesEmbed] });
+        await lastMessage.edit({
+          embeds: [withManualEntries(noNewLecturesEmbed, channel.guildId)],
+        });
         continue;
       }
 
@@ -418,7 +431,9 @@ async function refreshEmbedEvery5Minutes() {
         timeStyle: "short",
       });
       embed.setFooter({ text: `Last Refreshed: ${now}` });
-      await lastMessage.edit({ embeds: [embed] });
+      await lastMessage.edit({
+        embeds: [withManualEntries(embed, channel.guildId)],
+      });
     }
   } catch (error) {
     console.error("Error executing auto refresh", error);

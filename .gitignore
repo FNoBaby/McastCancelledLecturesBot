@@ -39,3 +39,4 @@ shared_state.json
 # Last downloaded timetable PDF (offline fallback)
 timetable_cache.pdf
 timetable_cache.json
+manual_cancellations.json

@@ -4,6 +4,7 @@ const config = require("../../config.json");
 const { getChannelState, setLastMessageId } = require("../functions/sharedState");
 const moment = require("moment-timezone");
 const Discord = require("discord.js");
+const { withManualEntries } = require("../functions/manualCancellations");
 
 const AMSTERDAM_TZ = "Europe/Amsterdam";
 
@@ -83,7 +84,10 @@ module.exports = {
           console.log(`Refreshing embed in server: "${guild.name}", channel: "${channel.name}"`);
 
           const state = getChannelState(channelId);
-          const useEmbed = hasLectures ? embed : noNewLecturesEmbed;
+          const useEmbed = withManualEntries(
+            hasLectures ? embed : noNewLecturesEmbed,
+            channel.guildId
+          );
           const canEditToday = Boolean(state && state.messageId);
 
           if (canEditToday) {
