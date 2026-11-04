@@ -1,6 +1,5 @@
 const { SlashCommandBuilder } = require("@discordjs/builders");
 const {
-  PermissionFlagsBits,
   ModalBuilder,
   LabelBuilder,
   StringSelectMenuBuilder,
@@ -10,7 +9,6 @@ const {
   ButtonStyle,
 } = require("discord.js");
 const moment = require("moment-timezone");
-const config = require("../../config.json");
 const { DAYS, getCachedTimetables } = require("../functions/fetchTimetable");
 const {
   getTimetableTargets,
@@ -168,13 +166,6 @@ async function findSession(interaction, className, value) {
 // only gives us 3 seconds to answer autocomplete or open a modal.
 async function loadTimetables(client) {
   return getCachedTimetables() || getTimetablesWithFallback(client);
-}
-
-function canUse(interaction) {
-  return (
-    interaction.user.id === config.devId ||
-    interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages)
-  );
 }
 
 function weekLabel(weekStart) {
@@ -356,9 +347,6 @@ module.exports = {
   async execute(interaction) {
     const reply = (content) => interaction.reply({ content, ephemeral: true });
     if (!interaction.guildId) return reply("This command can only be used in a server.");
-    if (!canUse(interaction)) {
-      return reply("❌ You need the **Manage Messages** permission to register cancelled lectures.");
-    }
 
     try {
       const className = interaction.options.getString("class");
@@ -412,9 +400,6 @@ module.exports = {
   // Class dropdown (step 1) → week dropdown (step 2) → modal; also Undo and Edit this week.
   async handleComponent(interaction) {
     if (interaction.isModalSubmit()) return this.handleModal(interaction);
-    if (!canUse(interaction)) {
-      return interaction.reply({ content: "❌ You don't have permission to do that.", ephemeral: true });
-    }
     try {
       if (interaction.customId === CLASS_SELECT_ID) {
         return await interaction.update(await weekSelectMessage(interaction, interaction.values[0]));
@@ -452,9 +437,6 @@ module.exports = {
     if (fromMessage) await interaction.deferUpdate();
     else await interaction.deferReply({ ephemeral: true });
     try {
-      if (!canUse(interaction)) {
-        return interaction.editReply({ content: "❌ You don't have permission to do that." });
-      }
       const [className, week] = interaction.customId.slice(MODAL_PREFIX.length).split("|");
       const data = await getTimetablesWithFallback(interaction.client);
       const classes = getGuildClasses(interaction.client, interaction.guildId, data.timetables);
