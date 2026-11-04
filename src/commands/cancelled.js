@@ -22,6 +22,7 @@ const {
   removeEntry,
   getUpcomingEntries,
   refreshClassMessages,
+  nextSchoolDayKey,
 } = require("../functions/manualCancellations");
 
 const TZ = "Europe/Malta";
@@ -131,8 +132,10 @@ async function applyChange(interaction, className, session, action) {
 
 // Reply after a single search change: what happened, plus Undo and Edit this week.
 function singleChangeReply(className, session, action, changed) {
+  const later = action === "add" && session.date > nextSchoolDayKey();
   const text = changed
-    ? `${action === "add" ? "✅ Registered" : "🗑️ Removed"} **${className}** — ${changeLabel(session)}`
+    ? `${action === "add" ? "✅ Registered" : "🗑️ Removed"} **${className}** — ${changeLabel(session)}` +
+      (later ? "\n*It will show in Cancelled Lectures the day before.*" : "")
     : `ℹ️ **${className}** — ${changeLabel(session)} was ${action === "add" ? "already registered" : "not registered"}.`;
   const buttons = [];
   if (changed) {
@@ -503,7 +506,11 @@ module.exports = {
         ...removed.map((l) => `🗑️ ${l}`),
       ];
       await interaction.editReply({
-        content: `**${className}** — ${weekLabel(week)}\n${lines.length ? lines.join("\n") : "No changes."}`,
+        content:
+          `**${className}** — ${weekLabel(week)}\n${lines.length ? lines.join("\n") : "No changes."}` +
+          (added.length && offered.some((s) => s.date > nextSchoolDayKey())
+            ? "\n*Cancelled Lectures shows each one from the day before.*"
+            : ""),
         components: [weekButtons(className, week, data)],
       });
     } catch (error) {

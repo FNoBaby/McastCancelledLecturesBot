@@ -110,35 +110,40 @@ function getUpcomingEntries({ className, guildId } = {}) {
     .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
 }
 
-function dateLabel(date) {
-  const day = moment.tz(date, "YYYY-MM-DD", TZ);
-  const label = day.format("dddd D MMMM");
-  return date === todayKey() ? `Today (${label})` : label;
+// The next school day after today (Friday -> Monday).
+function nextSchoolDayKey() {
+  const day = moment.tz(TZ).add(1, "day");
+  while (day.isoWeekday() > 5) day.add(1, "day");
+  return day.format("YYYY-MM-DD");
 }
 
-// Copy of `embed` with a "Manually Registered" section for this server.
+// Copy of `embed` with the "Manually Registered" sections for this server:
+// today's cancellations, and the next school day's marked "(Upcoming)" so they
+// show the day before. Later ones stay stored until then.
 // Never mutates the input: the same embed is reused across channels.
 function withManualEntries(embed, guildId) {
-  const upcoming = guildId ? getUpcomingEntries({ guildId }) : [];
-  if (!embed || upcoming.length === 0) return embed;
+  if (!embed || !guildId) return embed;
+  const entries = getUpcomingEntries({ guildId });
+  const sections = [
+    { date: todayKey(), title: "Manually Registered" },
+    { date: nextSchoolDayKey(), title: "Manually Registered (Upcoming)" },
+  ]
+    .map((section) => ({ ...section, list: entries.filter((e) => e.date === section.date) }))
+    .filter((section) => section.list.length);
+  if (!sections.length) return embed;
 
   const copy = EmbedBuilder.from(embed.toJSON ? embed.toJSON() : embed);
-  const byDate = new Map();
-  for (const e of upcoming) {
-    if (!byDate.has(e.date)) byDate.set(e.date, []);
-    byDate.get(e.date).push(e);
-  }
-
-  const room = 25 - (copy.data.fields?.length || 0);
-  const fields = [...byDate.entries()].slice(0, Math.max(room, 0)).map(([date, list]) => ({
-    name: `${MANUAL_PREFIX} Manually Registered — ${dateLabel(date)}`,
-    value: list
-      .map((e) => `**${e.className}** — ${e.module} \`${e.start}–${e.end}\``)
-      .join("\n")
-      .slice(0, 1024),
-    inline: false,
-  }));
-  if (fields.length) copy.addFields(fields);
+  const room = Math.max(25 - (copy.data.fields?.length || 0), 0);
+  copy.addFields(
+    sections.slice(0, room).map(({ date, title, list }) => ({
+      name: `${MANUAL_PREFIX} ${title} — ${moment.tz(date, "YYYY-MM-DD", TZ).format("dddd D MMMM")}`,
+      value: list
+        .map((e) => `**${e.className}** — ${e.module} \`${e.start}–${e.end}\``)
+        .join("\n")
+        .slice(0, 1024),
+      inline: false,
+    }))
+  );
   return copy;
 }
 
@@ -186,6 +191,7 @@ module.exports = {
   removeEntry,
   getUpcomingEntries,
   withManualEntries,
+  nextSchoolDayKey,
   refreshClassMessages,
   setClient,
 };
