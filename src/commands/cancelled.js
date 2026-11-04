@@ -29,10 +29,11 @@ const TZ = "Europe/Malta";
 const MODAL_PREFIX = "cancelled:"; // the lecture modal: cancelled:<class>|<week>
 const CLASS_SELECT_ID = "cancelled-class"; // step 1: pick a class
 const WEEK_SELECT_PREFIX = "cancelled-weeks:"; // step 2: pick a week, cancelled-weeks:<class>
-const WEEK_BUTTON_PREFIX = "cancelled-week:"; // ◀ / ▶: cancelled-week:<class>|<week>
+const WEEK_BUTTON_PREFIX = "cancelled-week:"; // ◀ / ▶ / Edit this week: cancelled-week:<class>|<week>
+const UNDO_PREFIX = "cancelled-undo:"; // cancelled-undo:<add|remove>|<class>|<date>|<start>
 const isCancelledComponent = (id) =>
   id === CLASS_SELECT_ID ||
-  [MODAL_PREFIX, WEEK_SELECT_PREFIX, WEEK_BUTTON_PREFIX].some((p) => id.startsWith(p));
+  [MODAL_PREFIX, WEEK_SELECT_PREFIX, WEEK_BUTTON_PREFIX, UNDO_PREFIX].some((p) => id.startsWith(p));
 const MAX_OPTIONS = 25; // Discord's limit for a select menu
 
 // MCAST semesters: 1 October – 31 January and 1 February – 31 May.
@@ -99,6 +100,66 @@ const matchesQuery = (text, query) => {
 
 const weekOf = (date) => moment.tz(date, "YYYY-MM-DD", TZ).startOf("isoWeek").format("YYYY-MM-DD");
 const sessionValue = (s) => `${s.date}|${s.start}`;
+
+const toEntry = (interaction, className, s) => ({
+  guildId: interaction.guildId, // which server registered it (for the log)
+  className,
+  module: s.module,
+  date: s.date,
+  start: s.start,
+  end: s.end,
+  room: s.room,
+  addedBy: interaction.user.id,
+});
+
+const changeLabel = (s) =>
+  `${moment.tz(s.date, TZ).format("ddd D MMM")} \`${s.start}–${s.end}\` ${s.module}`;
+
+// Registers ("add") or removes ("remove") one lecture and updates every server
+// following the class. Returns false if nothing changed.
+async function applyChange(interaction, className, session, action) {
+  const entry = toEntry(interaction, className, session);
+  const changed = action === "add" ? addEntry(entry) : removeEntry(entry) > 0;
+  if (changed) {
+    await refreshClassMessages(interaction.client, className);
+    console.log(
+      `${interaction.user.tag} in "${interaction.guild?.name}" (${interaction.guildId}) ${action === "add" ? "registered" : "removed"} cancelled lecture: ${className} ${session.module} ${session.date} ${session.start}`
+    );
+  }
+  return changed;
+}
+
+// Reply after a single search change: what happened, plus Undo and Edit this week.
+function singleChangeReply(className, session, action, changed) {
+  const text = changed
+    ? `${action === "add" ? "✅ Registered" : "🗑️ Removed"} **${className}** — ${changeLabel(session)}`
+    : `ℹ️ **${className}** — ${changeLabel(session)} was ${action === "add" ? "already registered" : "not registered"}.`;
+  const buttons = [];
+  if (changed) {
+    const reverse = action === "add" ? "remove" : "add";
+    buttons.push(
+      new ButtonBuilder()
+        .setCustomId(`${UNDO_PREFIX}${reverse}|${className}|${session.date}|${session.start}`)
+        .setLabel("Undo")
+        .setStyle(ButtonStyle.Danger)
+    );
+  }
+  buttons.push(
+    new ButtonBuilder()
+      .setCustomId(`${WEEK_BUTTON_PREFIX}${className}|${weekOf(session.date)}`)
+      .setLabel("Edit this week")
+      .setStyle(ButtonStyle.Secondary)
+  );
+  return { content: text, components: [new ActionRowBuilder().addComponents(buttons)] };
+}
+
+// Finds one lecture of the class this semester by its "date|start" value.
+async function findSession(interaction, className, value) {
+  const data = await getTimetablesWithFallback(interaction.client);
+  const classes = getGuildClasses(interaction.client, interaction.guildId, data.timetables);
+  if (!classes.includes(className)) return null;
+  return getSessions(data.timetables[className], currentSemester()).find((s) => sessionValue(s) === value) || null;
+}
 
 // Avoids a network round-trip when the timetable is already in memory; Discord
 // only gives us 3 seconds to answer autocomplete or open a modal.
@@ -216,7 +277,7 @@ async function weekSelectMessage(interaction, className) {
   return {
     content:
       `**${className}**: which week? ` +
-      "*(Tip: `/cancelled class:… lecture:…` lets you search the whole semester.)*",
+      "*(Tip: `/cancelled class:… lecture:…` searches the whole semester and registers one lecture right away.)*",
     components: [new ActionRowBuilder().addComponents(select)],
   };
 }
@@ -249,7 +310,7 @@ module.exports = {
       o.setName("class").setDescription("The class, e.g. IT-SWD-6.1B (leave empty to pick from a list)").setAutocomplete(true)
     )
     .addStringOption((o) =>
-      o.setName("lecture").setDescription("Search the semester's lectures, e.g. \"databases 12 nov\"").setAutocomplete(true)
+      o.setName("lecture").setDescription("Search a lecture to cancel it right away (or un-cancel it), e.g. \"databases 12 nov\"").setAutocomplete(true)
     )
     .addStringOption((o) =>
       o.setName("week").setDescription("Which week (defaults to the next week with lectures)").setAutocomplete(true)
@@ -276,11 +337,19 @@ module.exports = {
       } else if (focused.name === "lecture") {
         // Searches every lecture until the end of the semester. The day name and
         // full month are searchable too ("thursday", "november").
-        choices = sessions.map((s) => ({
-          name: `${sessionLabel(s)}${s.room ? ` · ${s.room}` : ""}`.slice(0, 100),
-          value: sessionValue(s),
-          search: `${sessionLabel(s)} ${s.room} ${moment.tz(s.date, TZ).format("dddd MMMM")}`,
-        }));
+        // Already-registered ones are marked; picking them removes the cancellation.
+        const registered = new Set(getUpcomingEntries({ className }).map(sessionValue));
+        choices = sessions.map((s) => {
+          const isCancelled = registered.has(sessionValue(s));
+          const name = isCancelled
+            ? `✅ ${sessionLabel(s)} (cancelled, pick to remove)`
+            : `${sessionLabel(s)}${s.room ? ` · ${s.room}` : ""}`;
+          return {
+            name: name.slice(0, 100),
+            value: sessionValue(s),
+            search: `${sessionLabel(s)} ${s.room} ${moment.tz(s.date, TZ).format("dddd MMMM")}${isCancelled ? " cancelled" : ""}`,
+          };
+        });
       }
 
       await interaction.respond(
@@ -295,7 +364,7 @@ module.exports = {
     }
   },
 
-  // /cancelled class:X lecture:Y → that week's modal with Y ticked.
+  // /cancelled class:X lecture:Y → registers Y right away (or removes it if already registered).
   // /cancelled class:X           → straight to the modal (current week, or week:).
   // /cancelled                   → class dropdown → week dropdown → modal
   //                                (class step skipped if the server has one class).
@@ -315,7 +384,16 @@ module.exports = {
         if (!/^\d{4}-\d{2}-\d{2}\|\d{2}:\d{2}$/.test(lecture)) {
           return reply("Pick a lecture from the search results.");
         }
-        return await openModal(interaction, className, lecture.split("|")[0], lecture);
+        // Search pick: register straight away, or remove it if it's already registered.
+        await interaction.deferReply({ ephemeral: true });
+        const session = await findSession(interaction, className, lecture);
+        if (!session) {
+          return interaction.editReply({ content: "That lecture isn't on this server's timetable for this semester." });
+        }
+        const registered = getUpcomingEntries({ className }).some((e) => sessionValue(e) === lecture);
+        const action = registered ? "remove" : "add";
+        const changed = await applyChange(interaction, className, session, action);
+        return interaction.editReply(singleChangeReply(className, session, action, changed));
       }
       if (className) return await openModal(interaction, className, week);
 
@@ -338,8 +416,10 @@ module.exports = {
       });
     } catch (error) {
       console.error("Error executing cancelled command:", error);
-      if (!interaction.replied) {
+      if (!interaction.replied && !interaction.deferred) {
         await reply("An error occurred while opening the cancelled lectures form.").catch(() => {});
+      } else {
+        await interaction.editReply({ content: "An error occurred while registering the cancelled lecture." }).catch(() => {});
       }
     }
   },
@@ -354,6 +434,15 @@ module.exports = {
       if (interaction.customId === CLASS_SELECT_ID) {
         return await interaction.update(await weekSelectMessage(interaction, interaction.values[0]));
       }
+      if (interaction.customId.startsWith(UNDO_PREFIX)) {
+        await interaction.deferUpdate();
+        const [action, className, date, start] = interaction.customId.slice(UNDO_PREFIX.length).split("|");
+        const session = await findSession(interaction, className, `${date}|${start}`);
+        if (!session) return interaction.editReply({ content: "That lecture is no longer on the timetable.", components: [] });
+        const changed = await applyChange(interaction, className, session, action);
+        // Undo of an undo works too: the reply flips to the opposite action.
+        return interaction.editReply(singleChangeReply(className, session, action, changed));
+      }
       if (interaction.customId.startsWith(WEEK_SELECT_PREFIX)) {
         const className = interaction.customId.slice(WEEK_SELECT_PREFIX.length);
         return await openModal(interaction, className, interaction.values[0]);
@@ -361,8 +450,8 @@ module.exports = {
       const [className, week] = interaction.customId.slice(WEEK_BUTTON_PREFIX.length).split("|");
       return await openModal(interaction, className, week);
     } catch (error) {
-      console.error("Error opening cancelled lectures modal:", error);
-      if (!interaction.replied) {
+      console.error("Error handling cancelled lectures component:", error);
+      if (!interaction.replied && !interaction.deferred) {
         await interaction
           .reply({ content: "An error occurred while opening the form.", ephemeral: true })
           .catch(() => {});
@@ -393,17 +482,8 @@ module.exports = {
       const added = [];
       const removed = [];
       for (const s of offered) {
-        const entry = {
-          guildId: interaction.guildId,
-          className,
-          module: s.module,
-          date: s.date,
-          start: s.start,
-          end: s.end,
-          room: s.room,
-          addedBy: interaction.user.id,
-        };
-        const label = `${moment.tz(s.date, TZ).format("ddd D MMM")} \`${s.start}–${s.end}\` ${s.module}`;
+        const entry = toEntry(interaction, className, s);
+        const label = changeLabel(s);
         if (selected.has(sessionValue(s))) {
           if (addEntry(entry)) added.push(label);
         } else if (removeEntry(entry)) {
