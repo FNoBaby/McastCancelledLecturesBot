@@ -75,9 +75,13 @@ client.on("ready", async () => {
       cancelledCommand.data.toJSON(),
     ];
 
-    await rest.put(Discord.Routes.applicationCommands(config.clientId), {
-      body: newGlobalCommands,
-    });
+    const registered = await rest.put(
+      Discord.Routes.applicationCommands(config.clientId),
+      { body: newGlobalCommands }
+    );
+    console.log(
+      `Global commands: ${registered.map((c) => `/${c.name}`).join(", ")}`
+    );
 
     if (config.devGuildId) {
       // Fetch and delete existing guild commands
