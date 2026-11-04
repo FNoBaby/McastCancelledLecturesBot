@@ -9,6 +9,7 @@ let lastGoodResult = null; // { description, date, lectures } from the last succ
 let embedFallback = null; // async () => a previously posted Cancelled Lectures embed
 
 const DESCRIPTION_PREFIX = "Cancelled Lectures for ";
+const MANUAL_FIELD_PREFIX = "📌"; // keep in sync with manualCancellations.MANUAL_PREFIX
 const STALE_NOTE =
   "⚠️ *The IICT site is unreachable, showing the last known list.*";
 
@@ -35,7 +36,11 @@ function buildLecturesEmbed(description, lectures, stale = false) {
 // posted embed. Status embeds ("not published yet") have no date line and give null.
 function parseLecturesEmbed(embed) {
   const description = embed?.description?.split("\n")[0] || "";
-  if (!description.startsWith(DESCRIPTION_PREFIX) || !embed.fields?.length) {
+  // Skip the "Manually Registered" section; those come from /cancelled.
+  const fields = (embed?.fields || []).filter(
+    (f) => !f.name.startsWith(MANUAL_FIELD_PREFIX)
+  );
+  if (!description.startsWith(DESCRIPTION_PREFIX) || !fields.length) {
     return null;
   }
   const date = moment.tz(
@@ -48,7 +53,7 @@ function parseLecturesEmbed(embed) {
   return {
     description,
     date: date.toDate(),
-    lectures: embed.fields.map((f) => ({
+    lectures: fields.map((f) => ({
       className: f.name,
       cancelledFor: f.value.split(",").map((i) => i.trim()).filter(Boolean),
     })),

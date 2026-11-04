@@ -303,6 +303,12 @@ function seedCacheFromEmbeds(parsed) {
   return { ...cache, changed: false, stale: true };
 }
 
+// Whatever is already in memory (no network), for interactions that must answer
+// within Discord's 3 second limit (autocomplete, opening a modal).
+function getCachedTimetables() {
+  return cache ? { ...cache, changed: false } : null;
+}
+
 // Class list for autocomplete; only hits the network if nothing is cached yet.
 async function getClassList() {
   if (cache) return cache.classes;
@@ -362,6 +368,7 @@ module.exports = {
   parseTimetablePdf,
   getTimetables,
   getClassList,
+  getCachedTimetables,
   buildTimetableEmbed,
   parseTimetableEmbed,
   seedCacheFromEmbeds,

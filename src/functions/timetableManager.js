@@ -150,6 +150,8 @@ async function syncTimetableMessages(client, { force = false } = {}) {
 module.exports = {
   syncTimetableMessages,
   getSharedClasses,
+  getTimetableTargets,
+  resolveClassName,
   getTimetablesWithFallback,
   restoreFromMessages,
 };

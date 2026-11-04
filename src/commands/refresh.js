@@ -9,6 +9,7 @@ const {
 } = require("../functions/sharedState");
 const moment = require("moment-timezone");
 const Discord = require("discord.js");
+const { withManualEntries } = require("../functions/manualCancellations");
 
 const cooldowns = new Map();
 const AMSTERDAM_TZ = "Europe/Amsterdam";
@@ -85,11 +86,14 @@ module.exports = {
             timeStyle: "short",
           });
           embed.setFooter({ text: `Last Refreshed: ${now}` });
-          const embedToUse = hasLectures
-            ? embed
-            : createStatusEmbed(
-                "**Lectures not published yet. Use /refresh to check again.**"
-              );
+          const embedToUse = withManualEntries(
+            hasLectures
+              ? embed
+              : createStatusEmbed(
+                  "**Lectures not published yet. Use /refresh to check again.**"
+                ),
+            interaction.guildId
+          );
           const canEditToday = Boolean(state && state.messageId);
 
           if (canEditToday) {
