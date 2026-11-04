@@ -4,10 +4,12 @@ const moment = require("moment-timezone");
 const { EmbedBuilder } = require("discord.js");
 const config = require("../../config.json");
 const { getChannelState, setLastMessageId } = require("./sharedState");
+const { getTimetableTargets } = require("./timetableManager");
 
 // Cancellations registered by hand with /cancelled, for when the IICT page
-// isn't being updated (e.g. during a strike). Stored per server, since each
-// server only has its own classes.
+// isn't being updated (e.g. during a strike). They belong to the class, so every
+// server with a timetable channel for that class sees them. `guildId` only
+// records which server registered it.
 const STORE_FILE = path.join(__dirname, "../../manual_cancellations.json");
 const TZ = "Europe/Malta";
 
@@ -30,7 +32,44 @@ function load() {
   }
 }
 
-let entries = load();
+const sameLesson = (a, b) =>
+  a.className === b.className &&
+  a.module === b.module &&
+  a.date === b.date &&
+  a.start === b.start;
+
+// Older entries were per server; the same lecture registered in two servers is now one entry.
+let entries = load().filter(
+  (e, i, all) => all.findIndex((o) => sameLesson(o, e)) === i
+);
+let client = null;
+
+// Needed to tell which server a channel is in.
+function setClient(c) {
+  client = c;
+}
+
+// Config class names may omit the PDF's "IT-" prefix.
+const classMatches = (configured, className) =>
+  className === configured || className === `IT-${configured}`;
+
+// Classes (as configured) this server has timetable channels for.
+function getGuildClassNames(guildId) {
+  return getTimetableTargets()
+    .filter(({ channelId }) => client?.channels.cache.get(channelId)?.guildId === guildId)
+    .flatMap(({ classes }) => classes);
+}
+
+// Servers that follow this class.
+function getGuildsForClass(className) {
+  const guilds = new Set();
+  for (const { channelId, classes } of getTimetableTargets()) {
+    if (!classes.some((c) => classMatches(c, className))) continue;
+    const guildId = client?.channels.cache.get(channelId)?.guildId;
+    if (guildId) guilds.add(guildId);
+  }
+  return guilds;
+}
 
 function save() {
   // Past days are never shown again, so drop them.
@@ -42,13 +81,6 @@ function save() {
     console.error("Could not write manual_cancellations.json:", error);
   }
 }
-
-const sameLesson = (a, b) =>
-  a.guildId === b.guildId &&
-  a.className === b.className &&
-  a.module === b.module &&
-  a.date === b.date &&
-  a.start === b.start;
 
 // Returns false if it was already registered.
 function addEntry(entry) {
@@ -66,11 +98,15 @@ function removeEntry(entry) {
   return before - entries.length;
 }
 
-// Today's and upcoming entries for a server, sorted by date then time.
-function getUpcomingEntries(guildId) {
+// Today's and upcoming entries, sorted by date then time. Pass a className for
+// one class, or { guildId } for every class that server follows.
+function getUpcomingEntries({ className, guildId } = {}) {
   const today = todayKey();
+  const followed = guildId ? getGuildClassNames(guildId) : null;
   return entries
-    .filter((e) => e.guildId === guildId && e.date >= today)
+    .filter((e) => e.date >= today)
+    .filter((e) => !className || e.className === className)
+    .filter((e) => !followed || followed.some((c) => classMatches(c, e.className)))
     .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
 }
 
@@ -83,7 +119,7 @@ function dateLabel(date) {
 // Copy of `embed` with a "Manually Registered" section for this server.
 // Never mutates the input: the same embed is reused across channels.
 function withManualEntries(embed, guildId) {
-  const upcoming = guildId ? getUpcomingEntries(guildId) : [];
+  const upcoming = guildId ? getUpcomingEntries({ guildId }) : [];
   if (!embed || upcoming.length === 0) return embed;
 
   const copy = EmbedBuilder.from(embed.toJSON ? embed.toJSON() : embed);
@@ -107,12 +143,13 @@ function withManualEntries(embed, guildId) {
 }
 
 // Re-applies the manual section to the tracked Cancelled Lectures message in
-// every registered channel of this server, sending one if there is none yet.
-async function refreshGuildMessages(client, guildId) {
+// every server that follows this class, sending one if there is none yet.
+async function refreshClassMessages(client, className) {
+  const guilds = getGuildsForClass(className);
   for (const channelId of config.channelIds) {
     try {
       const channel = await client.channels.fetch(channelId);
-      if (!channel || channel.guildId !== guildId) continue;
+      if (!channel || !guilds.has(channel.guildId)) continue;
 
       const state = getChannelState(channelId);
       let message = null;
@@ -129,7 +166,7 @@ async function refreshGuildMessages(client, guildId) {
             .setTitle("Cancelled Lectures")
             .setDescription("**Lectures not published yet. Use /refresh to check again.**")
             .setColor("Random");
-      const embed = withManualEntries(base, guildId);
+      const embed = withManualEntries(base, channel.guildId);
 
       if (message) {
         await message.edit({ embeds: [embed] });
@@ -149,5 +186,6 @@ module.exports = {
   removeEntry,
   getUpcomingEntries,
   withManualEntries,
-  refreshGuildMessages,
+  refreshClassMessages,
+  setClient,
 };

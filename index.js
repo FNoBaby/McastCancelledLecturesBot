@@ -23,7 +23,10 @@ const moment = require("moment-timezone");
 const motivatemeCommand = require("./src/commands/motivateme");
 const timetableCommand = require("./src/commands/timetable");
 const cancelledCommand = require("./src/commands/cancelled");
-const { withManualEntries } = require("./src/functions/manualCancellations");
+const {
+  withManualEntries,
+  setClient: setManualCancellationsClient,
+} = require("./src/functions/manualCancellations");
 const { syncTimetableMessages } = require("./src/functions/timetableManager");
 
 const client = new Discord.Client({
@@ -34,6 +37,7 @@ const client = new Discord.Client({
   ],
 });
 
+setManualCancellationsClient(client);
 client.login(config.token);
 
 const rest = new Discord.REST().setToken(config.token);

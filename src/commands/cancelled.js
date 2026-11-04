@@ -21,7 +21,7 @@ const {
   addEntry,
   removeEntry,
   getUpcomingEntries,
-  refreshGuildMessages,
+  refreshClassMessages,
 } = require("../functions/manualCancellations");
 
 const TZ = "Europe/Malta";
@@ -136,11 +136,8 @@ async function buildModal(interaction, className, requestedWeek) {
     return { error: `\`${className}\` has no lectures left in the ${weekLabel(week).toLowerCase()}.` };
   }
 
-  const registered = new Set(
-    getUpcomingEntries(interaction.guildId)
-      .filter((e) => e.className === className)
-      .map(sessionValue)
-  );
+  // Shared across every server that follows this class.
+  const registered = new Set(getUpcomingEntries({ className }).map(sessionValue));
 
   const select = new StringSelectMenuBuilder()
     .setCustomId("sessions")
@@ -337,9 +334,9 @@ module.exports = {
       }
 
       if (added.length || removed.length) {
-        await refreshGuildMessages(interaction.client, interaction.guildId);
+        await refreshClassMessages(interaction.client, className);
         console.log(
-          `${interaction.user.tag} updated cancelled lectures for ${className} (${week}): +${added.length} -${removed.length}`
+          `${interaction.user.tag} in "${interaction.guild?.name}" (${interaction.guildId}) updated cancelled lectures for ${className} (${week}): +${added.length} -${removed.length}`
         );
       }
 
