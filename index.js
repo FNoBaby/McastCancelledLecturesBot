@@ -174,6 +174,14 @@ client.on("interactionCreate", async (interaction) => {
     }
     return;
   }
+  // /cancelled class dropdown, week buttons and lecture modal.
+  if (
+    (interaction.isStringSelectMenu() || interaction.isButton() || interaction.isModalSubmit()) &&
+    cancelledCommand.isCancelledComponent(interaction.customId)
+  ) {
+    await cancelledCommand.handleComponent(interaction);
+    return;
+  }
   if (!interaction.isCommand()) return;
 
   if (isCronJobRunning) {

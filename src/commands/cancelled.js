@@ -1,8 +1,17 @@
 const { SlashCommandBuilder } = require("@discordjs/builders");
-const { PermissionFlagsBits } = require("discord.js");
+const {
+  PermissionFlagsBits,
+  ModalBuilder,
+  LabelBuilder,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} = require("discord.js");
 const moment = require("moment-timezone");
 const config = require("../../config.json");
-const { DAYS } = require("../functions/fetchTimetable");
+const { DAYS, getCachedTimetables } = require("../functions/fetchTimetable");
 const {
   getTimetableTargets,
   resolveClassName,
@@ -11,11 +20,35 @@ const {
 const {
   addEntry,
   removeEntry,
+  getUpcomingEntries,
   refreshGuildMessages,
 } = require("../functions/manualCancellations");
 
 const TZ = "Europe/Malta";
-const LOOKAHEAD_DAYS = 21;
+// Component custom ids (routed from index.js).
+const MODAL_PREFIX = "cancelled:"; // the lecture modal: cancelled:<class>|<week>
+const CLASS_SELECT_ID = "cancelled-class"; // step 1: pick a class
+const WEEK_BUTTON_PREFIX = "cancelled-week:"; // ◀ / ▶: cancelled-week:<class>|<week>
+const isCancelledComponent = (id) =>
+  id === CLASS_SELECT_ID || id.startsWith(MODAL_PREFIX) || id.startsWith(WEEK_BUTTON_PREFIX);
+const MAX_OPTIONS = 25; // Discord's limit for a select menu
+
+// MCAST semesters: 1 October – 31 January and 1 February – 31 May.
+// The published timetable is for the current one, so dates stop at its end.
+function currentSemester(now = moment.tz(TZ)) {
+  const month = now.month(); // 0 = January
+  const year = now.year();
+  if (month >= 9) {
+    return { name: "Semester 1", start: moment.tz([year, 9, 1], TZ), end: moment.tz([year + 1, 0, 31], TZ) };
+  }
+  if (month === 0) {
+    return { name: "Semester 1", start: moment.tz([year - 1, 9, 1], TZ), end: moment.tz([year, 0, 31], TZ) };
+  }
+  if (month <= 4) {
+    return { name: "Semester 2", start: moment.tz([year, 1, 1], TZ), end: moment.tz([year, 4, 31], TZ) };
+  }
+  return null; // June – September: no lectures
+}
 
 // Only the classes this server has timetable channels for.
 function getGuildClasses(client, guildId, timetables) {
@@ -30,40 +63,36 @@ function getGuildClasses(client, guildId, timetables) {
   return [...classes].sort();
 }
 
-// Every lesson of `module` in the class's week, as [{ day, start, end, room }].
-function findLessons(days, module) {
-  return DAYS.flatMap((day) =>
-    (days?.[day] || [])
-      .filter((l) => l.module === module)
-      .map((l) => ({ day, start: l.start, end: l.end, room: l.room }))
-  );
-}
-
-// Upcoming dates (from today) on which `module` takes place.
-function upcomingOccurrences(days, module) {
-  const lessons = findLessons(days, module);
-  const out = [];
+// Every lecture of the class from today until the end of the semester:
+// [{ date: "YYYY-MM-DD", start, end, module, room }].
+function getSessions(days, semester) {
+  if (!semester) return [];
+  const sessions = [];
   const today = moment.tz(TZ).startOf("day");
-  for (let i = 0; i < LOOKAHEAD_DAYS; i++) {
-    const date = today.clone().add(i, "days");
-    for (const l of lessons.filter((x) => x.day === date.format("dddd"))) {
-      out.push({ ...l, date: date.format("YYYY-MM-DD") });
+  const from = moment.max(today, semester.start);
+  for (const date = from.clone(); date.isSameOrBefore(semester.end, "day"); date.add(1, "day")) {
+    const weekday = date.format("dddd");
+    if (!DAYS.includes(weekday)) continue;
+    for (const l of days?.[weekday] || []) {
+      sessions.push({
+        date: date.format("YYYY-MM-DD"),
+        start: l.start,
+        end: l.end,
+        module: l.module,
+        room: l.room,
+      });
     }
   }
-  return out;
+  return sessions;
 }
 
-// Accepts the autocomplete value ("2026-11-05|09:00") or a typed date.
-function parseDateInput(input) {
-  const [datePart, start] = input.trim().split("|");
-  const formats = ["YYYY-MM-DD", "D MMMM YYYY", "D MMM YYYY"];
-  for (const sep of ["/", "-", "."]) {
-    for (const d of ["D", "DD"]) {
-      for (const m of ["M", "MM"]) formats.push(`${d}${sep}${m}${sep}YYYY`, `${d}${sep}${m}`);
-    }
-  }
-  const date = moment.tz(datePart, formats, true, TZ);
-  return date.isValid() ? { date, start: start || null } : null;
+const weekOf = (date) => moment.tz(date, "YYYY-MM-DD", TZ).startOf("isoWeek").format("YYYY-MM-DD");
+const sessionValue = (s) => `${s.date}|${s.start}`;
+
+// Avoids a network round-trip when the timetable is already in memory; Discord
+// only gives us 3 seconds to answer autocomplete or open a modal.
+async function loadTimetables(client) {
+  return getCachedTimetables() || getTimetablesWithFallback(client);
 }
 
 function canUse(interaction) {
@@ -73,54 +102,129 @@ function canUse(interaction) {
   );
 }
 
+function weekLabel(weekStart) {
+  const start = moment.tz(weekStart, "YYYY-MM-DD", TZ);
+  const thisWeek = moment.tz(TZ).startOf("isoWeek");
+  const suffix = start.isSame(thisWeek, "day")
+    ? " (this week)"
+    : start.isSame(thisWeek.clone().add(1, "week"), "day")
+      ? " (next week)"
+      : "";
+  return `Week of Mon ${start.format("D MMM YYYY")}${suffix}`;
+}
+
+// Builds the lecture modal for one class and week (week defaults to the first
+// week that still has lectures). Returns { modal } or { error }.
+async function buildModal(interaction, className, requestedWeek) {
+  const data = await loadTimetables(interaction.client);
+  const classes = getGuildClasses(interaction.client, interaction.guildId, data.timetables);
+  if (!classes.includes(className)) {
+    return { error: `Class \`${className}\` has no timetable registered in this server.` };
+  }
+
+  const semester = currentSemester();
+  if (!semester) return { error: "There's no semester running right now (June – September)." };
+
+  const sessions = getSessions(data.timetables[className], semester);
+  if (!sessions.length) {
+    return { error: `\`${className}\` has no more lectures this ${semester.name.toLowerCase()}.` };
+  }
+
+  const week = requestedWeek ? weekOf(requestedWeek) : weekOf(sessions[0].date);
+  const inWeek = sessions.filter((s) => weekOf(s.date) === week).slice(0, MAX_OPTIONS);
+  if (!inWeek.length) {
+    return { error: `\`${className}\` has no lectures left in the ${weekLabel(week).toLowerCase()}.` };
+  }
+
+  const registered = new Set(
+    getUpcomingEntries(interaction.guildId)
+      .filter((e) => e.className === className)
+      .map(sessionValue)
+  );
+
+  const select = new StringSelectMenuBuilder()
+    .setCustomId("sessions")
+    .setRequired(false)
+    .setMinValues(0)
+    .setMaxValues(inWeek.length)
+    .setPlaceholder("Tick the cancelled lectures")
+    .addOptions(
+      inWeek.map((s) =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(
+            `${moment.tz(s.date, TZ).format("ddd D MMM")} · ${s.start}–${s.end} · ${s.module}`.slice(0, 100)
+          )
+          .setDescription((s.room ? `📍 ${s.room}` : "No room listed").slice(0, 100))
+          .setValue(sessionValue(s))
+          .setDefault(registered.has(sessionValue(s)))
+      )
+    );
+
+  const modal = new ModalBuilder()
+    .setCustomId(`${MODAL_PREFIX}${className}|${week}`)
+    .setTitle(`Cancelled — ${className}`.slice(0, 45))
+    .addLabelComponents(
+      new LabelBuilder()
+        .setLabel("Cancelled lectures")
+        .setDescription(`${weekLabel(week)}. Untick one to remove it.`.slice(0, 100))
+        .setStringSelectMenuComponent(select)
+    );
+  return { modal };
+}
+
+// Opens the modal, or replies privately with why it can't.
+async function openModal(interaction, className, week) {
+  const { modal, error } = await buildModal(interaction, className, week);
+  if (modal) return interaction.showModal(modal);
+  return interaction.reply({ content: error, ephemeral: true });
+}
+
+// ◀ / ▶ buttons to open the modal for the neighbouring weeks of the semester.
+function weekButtons(className, week, data) {
+  const weeks = [
+    ...new Set(getSessions(data.timetables[className], currentSemester()).map((s) => weekOf(s.date))),
+  ];
+  const i = weeks.indexOf(week);
+  const button = (target, label) =>
+    new ButtonBuilder()
+      .setCustomId(`${WEEK_BUTTON_PREFIX}${className}|${target || week}`)
+      .setLabel(label)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!target);
+  return new ActionRowBuilder().addComponents(
+    button(i > 0 ? weeks[i - 1] : null, "◀ Previous week"),
+    button(i >= 0 && i < weeks.length - 1 ? weeks[i + 1] : null, "Next week ▶")
+  );
+}
+
 module.exports = {
+  isCancelledComponent,
+
   data: new SlashCommandBuilder()
     .setName("cancelled")
-    .setDescription("Manually register a cancelled lecture for this server")
+    .setDescription("Manually register cancelled lectures for this server")
     .addStringOption((o) =>
-      o.setName("class").setDescription("The class, e.g. IT-SWD-6.1B").setRequired(true).setAutocomplete(true)
+      o.setName("class").setDescription("The class, e.g. IT-SWD-6.1B (leave empty to pick from a list)").setAutocomplete(true)
     )
     .addStringOption((o) =>
-      o.setName("lecture").setDescription("The lecture from that class's timetable").setRequired(true).setAutocomplete(true)
-    )
-    .addStringOption((o) =>
-      o.setName("date").setDescription("When it's cancelled (pick one, or type e.g. 05/11/2026)").setRequired(true).setAutocomplete(true)
-    )
-    .addBooleanOption((o) =>
-      o.setName("remove").setDescription("Remove this cancellation instead of adding it")
+      o.setName("week").setDescription("Which week (defaults to the next week with lectures)").setAutocomplete(true)
     ),
 
   async autocomplete(interaction) {
     try {
       const focused = interaction.options.getFocused(true);
       const query = focused.value.toLowerCase();
-      const data = await getTimetablesWithFallback(interaction.client);
+      const data = await loadTimetables(interaction.client);
       const classes = getGuildClasses(interaction.client, interaction.guildId, data.timetables);
       let choices = [];
 
       if (focused.name === "class") {
         choices = classes.map((c) => ({ name: c, value: c }));
-      } else {
+      } else if (focused.name === "week") {
         const className = interaction.options.getString("class");
-        const days = classes.includes(className) ? data.timetables[className] : null;
-        if (days && focused.name === "lecture") {
-          const modules = new Map(); // module -> days it's on
-          for (const day of DAYS) {
-            for (const l of days[day] || []) {
-              if (!modules.has(l.module)) modules.set(l.module, new Set());
-              modules.get(l.module).add(day.slice(0, 3));
-            }
-          }
-          choices = [...modules].map(([module, on]) => ({
-            name: `${module} (${[...on].join(", ")})`.slice(0, 100),
-            value: module.slice(0, 100),
-          }));
-        } else if (days && focused.name === "date") {
-          const module = interaction.options.getString("lecture");
-          choices = upcomingOccurrences(days, module).map((o) => ({
-            name: `${moment.tz(o.date, TZ).format("ddd D MMM YYYY")} · ${o.start}–${o.end}${o.room ? ` · ${o.room}` : ""}`.slice(0, 100),
-            value: `${o.date}|${o.start}`,
-          }));
+        if (classes.includes(className)) {
+          const weeks = [...new Set(getSessions(data.timetables[className], currentSemester()).map((s) => weekOf(s.date)))];
+          choices = weeks.map((w) => ({ name: weekLabel(w), value: w }));
         }
       }
 
@@ -133,91 +237,123 @@ module.exports = {
     }
   },
 
+  // /cancelled class:X → straight to the modal.
+  // /cancelled          → a class dropdown first (skipped if the server has one class).
   async execute(interaction) {
-    if (!interaction.guildId) {
-      return interaction.reply({ content: "This command can only be used in a server.", ephemeral: true });
-    }
+    const reply = (content) => interaction.reply({ content, ephemeral: true });
+    if (!interaction.guildId) return reply("This command can only be used in a server.");
     if (!canUse(interaction)) {
-      return interaction.reply({
-        content: "❌ You need the **Manage Messages** permission to register cancelled lectures.",
-        ephemeral: true,
-      });
+      return reply("❌ You need the **Manage Messages** permission to register cancelled lectures.");
     }
-
-    await interaction.deferReply({ ephemeral: true });
 
     try {
       const className = interaction.options.getString("class");
-      const module = interaction.options.getString("lecture");
-      const remove = interaction.options.getBoolean("remove") || false;
-      const parsed = parseDateInput(interaction.options.getString("date"));
+      const week = interaction.options.getString("week");
+      if (className) return await openModal(interaction, className, week);
 
-      const data = await getTimetablesWithFallback(interaction.client);
+      const data = await loadTimetables(interaction.client);
       const classes = getGuildClasses(interaction.client, interaction.guildId, data.timetables);
-      if (!classes.includes(className)) {
-        return interaction.editReply({
-          content: `Class \`${className}\` has no timetable registered in this server.`,
-        });
-      }
-      const days = data.timetables[className];
-      if (!findLessons(days, module).length) {
-        return interaction.editReply({
-          content: `\`${module}\` isn't on the timetable for \`${className}\`.`,
-        });
-      }
-      if (!parsed) {
-        return interaction.editReply({
-          content: "I couldn't read that date. Pick one from the list, or type it like `05/11/2026`.",
-        });
-      }
-      if (!remove && parsed.date.isBefore(moment.tz(TZ).startOf("day"))) {
-        return interaction.editReply({ content: "That date is in the past." });
-      }
+      if (classes.length === 0) return reply("This server has no class timetables registered.");
+      if (classes.length === 1) return await openModal(interaction, classes[0], week);
 
-      // Times come from the timetable for that weekday.
-      const weekday = parsed.date.format("dddd");
-      const lessons = findLessons(days, module).filter(
-        (l) => l.day === weekday && (!parsed.start || l.start === parsed.start)
-      );
-      const dateText = parsed.date.format("dddd D MMMM YYYY");
-      if (!lessons.length) {
-        return interaction.editReply({
-          content: `\`${className}\` has no \`${module}\` lecture on ${dateText}.`,
-        });
-      }
-
-      const date = parsed.date.format("YYYY-MM-DD");
-      const results = lessons.map((l) => {
-        const entry = {
-          guildId: interaction.guildId,
-          className,
-          module,
-          date,
-          start: l.start,
-          end: l.end,
-          room: l.room,
-          addedBy: interaction.user.id,
-        };
-        const time = `\`${l.start}–${l.end}\``;
-        if (remove) {
-          return removeEntry(entry) ? `🗑️ Removed ${time}` : `ℹ️ ${time} wasn't registered`;
-        }
-        return addEntry(entry) ? `✅ Registered ${time}` : `ℹ️ ${time} was already registered`;
-      });
-
-      await refreshGuildMessages(interaction.client, interaction.guildId);
-
-      console.log(
-        `${interaction.user.tag} ${remove ? "removed" : "registered"} cancelled lecture: ${className} ${module} ${date}`
-      );
-      await interaction.editReply({
-        content: `**${className}** — ${module}, ${dateText}\n${results.join("\n")}`,
+      const select = new StringSelectMenuBuilder()
+        .setCustomId(CLASS_SELECT_ID)
+        .setPlaceholder("Pick a class")
+        .addOptions(classes.slice(0, MAX_OPTIONS).map((c) => ({ label: c, value: c })));
+      await interaction.reply({
+        content: "Which class are the cancelled lectures for?",
+        components: [new ActionRowBuilder().addComponents(select)],
+        ephemeral: true,
       });
     } catch (error) {
       console.error("Error executing cancelled command:", error);
+      if (!interaction.replied) {
+        await reply("An error occurred while opening the cancelled lectures form.").catch(() => {});
+      }
+    }
+  },
+
+  // Class dropdown (step 1) and the ◀ / ▶ week buttons both open the modal.
+  async handleComponent(interaction) {
+    if (interaction.isModalSubmit()) return this.handleModal(interaction);
+    if (!canUse(interaction)) {
+      return interaction.reply({ content: "❌ You don't have permission to do that.", ephemeral: true });
+    }
+    try {
+      if (interaction.customId === CLASS_SELECT_ID) {
+        return await openModal(interaction, interaction.values[0]);
+      }
+      const [className, week] = interaction.customId.slice(WEEK_BUTTON_PREFIX.length).split("|");
+      return await openModal(interaction, className, week);
+    } catch (error) {
+      console.error("Error opening cancelled lectures modal:", error);
+      if (!interaction.replied) {
+        await interaction
+          .reply({ content: "An error occurred while opening the form.", ephemeral: true })
+          .catch(() => {});
+      }
+    }
+  },
+
+  // The modal's selection becomes that week's set of cancellations for the class.
+  async handleModal(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    try {
+      if (!canUse(interaction)) {
+        return interaction.editReply({ content: "❌ You don't have permission to do that." });
+      }
+      const [className, week] = interaction.customId.slice(MODAL_PREFIX.length).split("|");
+      const data = await getTimetablesWithFallback(interaction.client);
+      const classes = getGuildClasses(interaction.client, interaction.guildId, data.timetables);
+      if (!classes.includes(className)) {
+        return interaction.editReply({ content: `Class \`${className}\` has no timetable registered in this server.` });
+      }
+
+      // Same list the modal showed; only these can be added or removed.
+      const offered = getSessions(data.timetables[className], currentSemester())
+        .filter((s) => weekOf(s.date) === week)
+        .slice(0, MAX_OPTIONS);
+      const selected = new Set(interaction.fields.getStringSelectValues("sessions"));
+
+      const added = [];
+      const removed = [];
+      for (const s of offered) {
+        const entry = {
+          guildId: interaction.guildId,
+          className,
+          module: s.module,
+          date: s.date,
+          start: s.start,
+          end: s.end,
+          room: s.room,
+          addedBy: interaction.user.id,
+        };
+        const label = `${moment.tz(s.date, TZ).format("ddd D MMM")} \`${s.start}–${s.end}\` ${s.module}`;
+        if (selected.has(sessionValue(s))) {
+          if (addEntry(entry)) added.push(label);
+        } else if (removeEntry(entry)) {
+          removed.push(label);
+        }
+      }
+
+      if (added.length || removed.length) {
+        await refreshGuildMessages(interaction.client, interaction.guildId);
+        console.log(
+          `${interaction.user.tag} updated cancelled lectures for ${className} (${week}): +${added.length} -${removed.length}`
+        );
+      }
+
+      const lines = [
+        ...added.map((l) => `✅ ${l}`),
+        ...removed.map((l) => `🗑️ ${l}`),
+      ];
       await interaction.editReply({
-        content: "An error occurred while registering the cancelled lecture.",
+        content: `**${className}** — ${weekLabel(week)}\n${lines.length ? lines.join("\n") : "No changes."}`,
+        components: [weekButtons(className, week, data)],
       });
+    } catch (error) {
+      console.error("Error saving cancelled lectures:", error);
+      await interaction.editReply({ content: "An error occurred while saving the cancelled lectures." });
     }
   },
 };
