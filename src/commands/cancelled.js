@@ -30,7 +30,7 @@ const TZ = "Europe/Malta";
 const MODAL_PREFIX = "cancelled:"; // the lecture modal: cancelled:<class>|<week>
 const CLASS_SELECT_ID = "cancelled-class"; // step 1: pick a class
 const WEEK_SELECT_PREFIX = "cancelled-weeks:"; // step 2: pick a week, cancelled-weeks:<class>
-const WEEK_BUTTON_PREFIX = "cancelled-week:"; // ◀ / ▶ / Edit this week: cancelled-week:<class>|<week>
+const WEEK_BUTTON_PREFIX = "cancelled-week:"; // Edit this week: cancelled-week:<class>|<week>
 const UNDO_PREFIX = "cancelled-undo:"; // cancelled-undo:<add|remove>|<class>|<date>|<start>
 const isCancelledComponent = (id) =>
   id === CLASS_SELECT_ID ||
@@ -285,24 +285,6 @@ async function weekSelectMessage(interaction, className) {
   };
 }
 
-// ◀ / ▶ buttons to open the modal for the neighbouring weeks of the semester.
-function weekButtons(className, week, data) {
-  const weeks = [
-    ...new Set(getSessions(data.timetables[className], currentSemester()).map((s) => weekOf(s.date))),
-  ];
-  const i = weeks.indexOf(week);
-  const button = (target, label) =>
-    new ButtonBuilder()
-      .setCustomId(`${WEEK_BUTTON_PREFIX}${className}|${target || week}`)
-      .setLabel(label)
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!target);
-  return new ActionRowBuilder().addComponents(
-    button(i > 0 ? weeks[i - 1] : null, "◀ Previous week"),
-    button(i >= 0 && i < weeks.length - 1 ? weeks[i + 1] : null, "Next week ▶")
-  );
-}
-
 module.exports = {
   isCancelledComponent,
 
@@ -427,7 +409,7 @@ module.exports = {
     }
   },
 
-  // Class dropdown (step 1) → week dropdown (step 2) → modal; ◀ / ▶ buttons open the modal.
+  // Class dropdown (step 1) → week dropdown (step 2) → modal; also Undo and Edit this week.
   async handleComponent(interaction) {
     if (interaction.isModalSubmit()) return this.handleModal(interaction);
     if (!canUse(interaction)) {
@@ -511,7 +493,6 @@ module.exports = {
           (added.length && offered.some((s) => s.date > nextSchoolDayKey())
             ? "\n*Cancelled Lectures shows each one from the day before.*"
             : ""),
-        components: [weekButtons(className, week, data)],
       });
     } catch (error) {
       console.error("Error saving cancelled lectures:", error);
