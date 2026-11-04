@@ -497,13 +497,8 @@ module.exports = {
           ? "\n*Cancelled Lectures shows each one from the day before.*"
           : "");
 
-      if (!fromMessage) return interaction.editReply({ content: result });
-      // Keep a fresh week dropdown under the result so another week can be picked.
-      const weeks = await weekSelectMessage(interaction, className);
-      await interaction.editReply({
-        content: `${result}\n\nPick another week, or dismiss this message.`,
-        components: weeks.components,
-      });
+      // From a message, this replaces it (dropdown/buttons removed).
+      await interaction.editReply({ content: result, components: [] });
     } catch (error) {
       console.error("Error saving cancelled lectures:", error);
       await interaction.editReply({ content: "An error occurred while saving the cancelled lectures." });
