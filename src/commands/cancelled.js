@@ -28,9 +28,11 @@ const TZ = "Europe/Malta";
 // Component custom ids (routed from index.js).
 const MODAL_PREFIX = "cancelled:"; // the lecture modal: cancelled:<class>|<week>
 const CLASS_SELECT_ID = "cancelled-class"; // step 1: pick a class
+const WEEK_SELECT_PREFIX = "cancelled-weeks:"; // step 2: pick a week, cancelled-weeks:<class>
 const WEEK_BUTTON_PREFIX = "cancelled-week:"; // ◀ / ▶: cancelled-week:<class>|<week>
 const isCancelledComponent = (id) =>
-  id === CLASS_SELECT_ID || id.startsWith(MODAL_PREFIX) || id.startsWith(WEEK_BUTTON_PREFIX);
+  id === CLASS_SELECT_ID ||
+  [MODAL_PREFIX, WEEK_SELECT_PREFIX, WEEK_BUTTON_PREFIX].some((p) => id.startsWith(p));
 const MAX_OPTIONS = 25; // Discord's limit for a select menu
 
 // MCAST semesters: 1 October – 31 January and 1 February – 31 May.
@@ -86,6 +88,15 @@ function getSessions(days, semester) {
   return sessions;
 }
 
+const sessionLabel = (s) =>
+  `${moment.tz(s.date, TZ).format("ddd D MMM")} · ${s.start}–${s.end} · ${s.module}`;
+
+// Every word typed must appear somewhere, so "databases 12 nov" works.
+const matchesQuery = (text, query) => {
+  const haystack = text.toLowerCase();
+  return query.toLowerCase().split(/\s+/).filter(Boolean).every((w) => haystack.includes(w));
+};
+
 const weekOf = (date) => moment.tz(date, "YYYY-MM-DD", TZ).startOf("isoWeek").format("YYYY-MM-DD");
 const sessionValue = (s) => `${s.date}|${s.start}`;
 
@@ -114,8 +125,9 @@ function weekLabel(weekStart) {
 }
 
 // Builds the lecture modal for one class and week (week defaults to the first
-// week that still has lectures). Returns { modal } or { error }.
-async function buildModal(interaction, className, requestedWeek) {
+// week that still has lectures). `preselect` is a session value to tick, e.g.
+// one picked through the lecture search. Returns { modal } or { error }.
+async function buildModal(interaction, className, requestedWeek, preselect = null) {
   const data = await loadTimetables(interaction.client);
   const classes = getGuildClasses(interaction.client, interaction.guildId, data.timetables);
   if (!classes.includes(className)) {
@@ -148,12 +160,10 @@ async function buildModal(interaction, className, requestedWeek) {
     .addOptions(
       inWeek.map((s) =>
         new StringSelectMenuOptionBuilder()
-          .setLabel(
-            `${moment.tz(s.date, TZ).format("ddd D MMM")} · ${s.start}–${s.end} · ${s.module}`.slice(0, 100)
-          )
+          .setLabel(sessionLabel(s).slice(0, 100))
           .setDescription((s.room ? `📍 ${s.room}` : "No room listed").slice(0, 100))
           .setValue(sessionValue(s))
-          .setDefault(registered.has(sessionValue(s)))
+          .setDefault(registered.has(sessionValue(s)) || sessionValue(s) === preselect)
       )
     );
 
@@ -170,10 +180,45 @@ async function buildModal(interaction, className, requestedWeek) {
 }
 
 // Opens the modal, or replies privately with why it can't.
-async function openModal(interaction, className, week) {
-  const { modal, error } = await buildModal(interaction, className, week);
+async function openModal(interaction, className, week, preselect) {
+  const { modal, error } = await buildModal(interaction, className, week, preselect);
   if (modal) return interaction.showModal(modal);
   return interaction.reply({ content: error, ephemeral: true });
+}
+
+// Step 2: a dropdown of every week left in the semester, with how many lectures
+// each has and how many are already registered as cancelled.
+async function weekSelectMessage(interaction, className) {
+  const data = await loadTimetables(interaction.client);
+  const sessions = getSessions(data.timetables[className], currentSemester());
+  if (!sessions.length) {
+    return { content: `\`${className}\` has no more lectures this semester.`, components: [] };
+  }
+  const registered = new Set(getUpcomingEntries({ className }).map(sessionValue));
+  const weeks = new Map(); // week -> { total, cancelled }
+  for (const s of sessions) {
+    const w = weekOf(s.date);
+    const count = weeks.get(w) || { total: 0, cancelled: 0 };
+    count.total++;
+    if (registered.has(sessionValue(s))) count.cancelled++;
+    weeks.set(w, count);
+  }
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(`${WEEK_SELECT_PREFIX}${className}`)
+    .setPlaceholder("Pick a week")
+    .addOptions(
+      [...weeks].slice(0, MAX_OPTIONS).map(([w, { total, cancelled }]) => ({
+        label: weekLabel(w),
+        description: `${total} lecture${total === 1 ? "" : "s"}` + (cancelled ? ` · ${cancelled} cancelled` : ""),
+        value: w,
+      }))
+    );
+  return {
+    content:
+      `**${className}**: which week? ` +
+      "*(Tip: `/cancelled class:… lecture:…` lets you search the whole semester.)*",
+    components: [new ActionRowBuilder().addComponents(select)],
+  };
 }
 
 // ◀ / ▶ buttons to open the modal for the neighbouring weeks of the semester.
@@ -204,6 +249,9 @@ module.exports = {
       o.setName("class").setDescription("The class, e.g. IT-SWD-6.1B (leave empty to pick from a list)").setAutocomplete(true)
     )
     .addStringOption((o) =>
+      o.setName("lecture").setDescription("Search the semester's lectures, e.g. \"databases 12 nov\"").setAutocomplete(true)
+    )
+    .addStringOption((o) =>
       o.setName("week").setDescription("Which week (defaults to the next week with lectures)").setAutocomplete(true)
     ),
 
@@ -215,18 +263,31 @@ module.exports = {
       const classes = getGuildClasses(interaction.client, interaction.guildId, data.timetables);
       let choices = [];
 
+      const className = interaction.options.getString("class");
+      const sessions = classes.includes(className)
+        ? getSessions(data.timetables[className], currentSemester())
+        : [];
+
       if (focused.name === "class") {
         choices = classes.map((c) => ({ name: c, value: c }));
       } else if (focused.name === "week") {
-        const className = interaction.options.getString("class");
-        if (classes.includes(className)) {
-          const weeks = [...new Set(getSessions(data.timetables[className], currentSemester()).map((s) => weekOf(s.date)))];
-          choices = weeks.map((w) => ({ name: weekLabel(w), value: w }));
-        }
+        const weeks = [...new Set(sessions.map((s) => weekOf(s.date)))];
+        choices = weeks.map((w) => ({ name: weekLabel(w), value: w }));
+      } else if (focused.name === "lecture") {
+        // Searches every lecture until the end of the semester. The day name and
+        // full month are searchable too ("thursday", "november").
+        choices = sessions.map((s) => ({
+          name: `${sessionLabel(s)}${s.room ? ` · ${s.room}` : ""}`.slice(0, 100),
+          value: sessionValue(s),
+          search: `${sessionLabel(s)} ${s.room} ${moment.tz(s.date, TZ).format("dddd MMMM")}`,
+        }));
       }
 
       await interaction.respond(
-        choices.filter((c) => c.name.toLowerCase().includes(query)).slice(0, 25)
+        choices
+          .filter((c) => matchesQuery(c.search || c.name, query))
+          .slice(0, 25)
+          .map(({ name, value }) => ({ name, value }))
       );
     } catch (error) {
       console.error("Cancelled autocomplete failed:", error);
@@ -234,8 +295,10 @@ module.exports = {
     }
   },
 
-  // /cancelled class:X → straight to the modal.
-  // /cancelled          → a class dropdown first (skipped if the server has one class).
+  // /cancelled class:X lecture:Y → that week's modal with Y ticked.
+  // /cancelled class:X           → straight to the modal (current week, or week:).
+  // /cancelled                   → class dropdown → week dropdown → modal
+  //                                (class step skipped if the server has one class).
   async execute(interaction) {
     const reply = (content) => interaction.reply({ content, ephemeral: true });
     if (!interaction.guildId) return reply("This command can only be used in a server.");
@@ -246,12 +309,23 @@ module.exports = {
     try {
       const className = interaction.options.getString("class");
       const week = interaction.options.getString("week");
+      const lecture = interaction.options.getString("lecture");
+      if (lecture) {
+        if (!className) return reply("Pick a `class` first, then search for the `lecture`.");
+        if (!/^\d{4}-\d{2}-\d{2}\|\d{2}:\d{2}$/.test(lecture)) {
+          return reply("Pick a lecture from the search results.");
+        }
+        return await openModal(interaction, className, lecture.split("|")[0], lecture);
+      }
       if (className) return await openModal(interaction, className, week);
 
       const data = await loadTimetables(interaction.client);
       const classes = getGuildClasses(interaction.client, interaction.guildId, data.timetables);
       if (classes.length === 0) return reply("This server has no class timetables registered.");
-      if (classes.length === 1) return await openModal(interaction, classes[0], week);
+      if (classes.length === 1) {
+        if (week) return await openModal(interaction, classes[0], week);
+        return await interaction.reply({ ...(await weekSelectMessage(interaction, classes[0])), ephemeral: true });
+      }
 
       const select = new StringSelectMenuBuilder()
         .setCustomId(CLASS_SELECT_ID)
@@ -270,7 +344,7 @@ module.exports = {
     }
   },
 
-  // Class dropdown (step 1) and the ◀ / ▶ week buttons both open the modal.
+  // Class dropdown (step 1) → week dropdown (step 2) → modal; ◀ / ▶ buttons open the modal.
   async handleComponent(interaction) {
     if (interaction.isModalSubmit()) return this.handleModal(interaction);
     if (!canUse(interaction)) {
@@ -278,7 +352,11 @@ module.exports = {
     }
     try {
       if (interaction.customId === CLASS_SELECT_ID) {
-        return await openModal(interaction, interaction.values[0]);
+        return await interaction.update(await weekSelectMessage(interaction, interaction.values[0]));
+      }
+      if (interaction.customId.startsWith(WEEK_SELECT_PREFIX)) {
+        const className = interaction.customId.slice(WEEK_SELECT_PREFIX.length);
+        return await openModal(interaction, className, interaction.values[0]);
       }
       const [className, week] = interaction.customId.slice(WEEK_BUTTON_PREFIX.length).split("|");
       return await openModal(interaction, className, week);
