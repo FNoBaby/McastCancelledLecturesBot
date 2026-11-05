@@ -131,6 +131,17 @@ async function parsePage(page, OPS) {
   const gridLeft = rects.find((r) => r.w < 1 && r.h > 400 && r.x > 90 && r.x < 100)?.x;
   const colEdges = [gridLeft ?? 95, ...colLines.filter((x) => x > 100)];
 
+  // Columns aren't always Monday-Friday (a class with no lessons on a day may
+  // have that column left out), so read each column's day from its header.
+  const columnOf = (x) =>
+    colEdges.findIndex((edge, i) => i < colEdges.length - 1 && x >= edge && x < colEdges[i + 1]);
+  const columnDays = [];
+  for (const t of text) {
+    if (!DAYS.includes(t.str) || t.y < gridTop) continue;
+    const col = columnOf(t.x + t.w / 2);
+    if (col >= 0) columnDays[col] = t.str;
+  }
+
   const lessons = {};
   const boxes = rects.filter(
     (r) =>
@@ -144,10 +155,8 @@ async function parsePage(page, OPS) {
 
   for (const box of boxes) {
     const cx = box.x + box.w / 2;
-    const dayIdx = colEdges.findIndex(
-      (edge, i) => i < colEdges.length - 1 && cx >= edge && cx < colEdges[i + 1]
-    );
-    if (dayIdx < 0 || dayIdx >= DAYS.length) continue;
+    const day = columnDays[columnOf(cx)];
+    if (!day) continue;
 
     // Nearest row lines to the top and bottom of the box.
     const nearest = (y) =>
@@ -178,7 +187,6 @@ async function parsePage(page, OPS) {
     const fullModule = moduleParts.map((t) => t.str).join(" ");
     const m = fullModule.match(/^([A-Z]+-\d+-\d+)-(.+)$/);
 
-    const day = DAYS[dayIdx];
     (lessons[day] = lessons[day] || []).push({
       start: parseTime(first.str.split("-")[0].trim()),
       end: parseTime(last.str.split("-")[1].trim()),
